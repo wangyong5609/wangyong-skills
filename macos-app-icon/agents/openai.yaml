@@ -1,0 +1,3 @@
+display_name: macOS App Icon
+short_description: Create Dock-ready macOS .icns icons with rounded tiles, transparency, and previews.
+default_prompt: Create a macOS app icon from my visual brief, self-check the preview, and package it as .icns.

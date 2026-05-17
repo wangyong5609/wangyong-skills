@@ -1,0 +1,35 @@
+# Local editor and OS files
+.DS_Store
+.idea/
+.vscode/
+
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+
+# Local secrets and credentials
+.env
+.env.*
+!.env.example
+secrets.*
+credentials.*
+*.pem
+*.key
+*.cookie
+
+# Generated outputs
+output/
+漫画输出/
+*.log
+*.tmp
+
+# macOS icon build artifacts
+*.icns
+*.iconset/

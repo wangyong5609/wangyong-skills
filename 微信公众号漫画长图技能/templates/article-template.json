@@ -1,0 +1,17 @@
+{
+  "canvas_width": 600,
+  "background": "#ffffff",
+  "blocks": [
+    {"type": "title", "text": "这里换成你的主题标题"},
+    {"type": "paragraph", "text": "这里写开场钩子，最好是读者一眼能代入的日常问题。"},
+    {"type": "image", "path": "panels/panel-01.png", "width": 540},
+    {"type": "heading", "text": "首先，给一个直接结论"},
+    {"type": "paragraph", "text": "用两三句短话解释，不要把公众号长图写成论文。"},
+    {"type": "callout", "text": "这里放一句橙色提示、吐槽或反直觉解释。"},
+    {"type": "image", "path": "panels/panel-02.png", "width": 460},
+    {"type": "heading", "text": "其次，展开第二层原因"},
+    {"type": "paragraph", "text": "继续用短句推进，把每个知识点拆成一口能吃下的小块。"},
+    {"type": "rule"},
+    {"type": "paragraph", "text": "最后用一句话收束，让读者觉得自己真的看懂了。"}
+  ]
+}

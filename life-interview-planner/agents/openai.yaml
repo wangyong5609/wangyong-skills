@@ -1,0 +1,4 @@
+interface:
+  display_name: "Life Interview Planner"
+  short_description: "Structured interviews for life direction and talent fit"
+  default_prompt: "Use $life-interview-planner to conduct a deep life interview, infer talent-fit hypotheses, and extract meaningful future directions."

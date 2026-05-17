@@ -1,0 +1,22 @@
+{
+  "style": "风格二",
+  "canvas_width": 703,
+  "background": "#ffffff",
+  "body_size": 25,
+  "bar_size": 25,
+  "emphasis_size": 31,
+  "bottom_padding": 96,
+  "blocks": [
+    {"type": "image", "path": "panels/panel-01.png", "width": 640, "fade_edges": 46, "pad_top": 30, "pad_bottom": 34},
+    {"type": "text_bars", "lines": ["今天想聊一件很多人都经历过", "但很少认真面对的事——"], "bar_color": "#2f5599", "bar_height": 38},
+    {"type": "text_bars", "lines": [{"text": "有些关系的结束", "text_color": "#ffd84d"}, {"text": "不是因为不重要", "text_color": "#ffd84d"}, {"text": "而是因为你终于开始听见自己", "text_color": "#ffd84d"}], "bar_color": "#244d96", "bar_height": 40, "pad_top": 28},
+    {"type": "image", "path": "panels/panel-02.png", "width": 640, "fade_edges": 42},
+    {"type": "text_bars", "lines": ["很多时候，我们以为自己放不下", "其实是还没有给故事一个位置"], "bar_color": "#2f5599", "bar_height": 38},
+    {"type": "emphasis", "text": "不是所有故事都需要一个体面的结局\n不再追问“为什么”\n就是翻篇的开始", "color": "#c9331d", "line_gap": 18, "pad_top": 46, "pad_bottom": 50},
+    {"type": "image", "path": "panels/panel-03.png", "width": 610, "fade_edges": 34},
+    {"type": "text_bars", "lines": ["你真正要练习的", "不是忘记一个人", "而是把注意力慢慢收回自己身上"], "bar_color": "#2f5599", "bar_height": 38},
+    {"type": "image", "path": "panels/panel-04.png", "width": 610, "fade_edges": 34},
+    {"type": "text_bars", "lines": ["直到某一天你会发现", "原来没有回应，也是一种回答"], "bar_color": "#2f5599", "bar_height": 38},
+    {"type": "emphasis", "text": "关系的结束不是证明你输了\n而是提醒你：\n该把人生重新还给自己", "color": "#c9331d", "line_gap": 18}
+  ]
+}
