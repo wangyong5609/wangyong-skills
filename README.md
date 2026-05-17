@@ -11,6 +11,15 @@
 | `macos-app-icon` | 生成、优化和打包 macOS 应用图标 `.icns`。 |
 | `life-interview-planner` | 通过结构化访谈挖掘人生可能性、优势假设、价值观和验证实验。 |
 
+## 效果预览
+
+示例图较长，README 不直接展开。点击下面按钮查看原图：
+
+| Skill | 示例 |
+| --- | --- |
+| `wechat-article-collector` | <a href="docs/examples/wechat-article-collector.png"><kbd>查看采集效果</kbd></a> |
+| `微信公众号漫画长图技能` | <a href="docs/examples/wechat-comic-style-1.png"><kbd>风格一</kbd></a> <a href="docs/examples/wechat-comic-style-2.png"><kbd>风格二</kbd></a> <a href="docs/examples/wechat-comic-style-3.png"><kbd>风格三</kbd></a> |
+
 ## 怎么安装
 
 最简单的方式是把下面这段话复制给你的 AI Agent：
