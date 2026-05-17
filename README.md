@@ -17,8 +17,8 @@
 
 | Skill | 示例 |
 | --- | --- |
-| `wechat-article-collector` | <a href="docs/examples/wechat-article-collector.png"><kbd>查看采集效果</kbd></a> |
-| `微信公众号漫画长图技能` | <a href="docs/examples/wechat-comic-style-1.png"><kbd>风格一</kbd></a> <a href="docs/examples/wechat-comic-style-2.png"><kbd>风格二</kbd></a> <a href="docs/examples/wechat-comic-style-3.png"><kbd>风格三</kbd></a> |
+| `wechat-article-collector` | [<kbd>查看采集效果</kbd>](./docs/examples/wechat-article-collector.png) |
+| `微信公众号漫画长图技能` | [<kbd>风格一</kbd>](./docs/examples/wechat-comic-style-1.png) [<kbd>风格二</kbd>](./docs/examples/wechat-comic-style-2.png) [<kbd>风格三</kbd>](./docs/examples/wechat-comic-style-3.png) |
 
 ## 怎么安装
 
