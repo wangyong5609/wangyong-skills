@@ -16,12 +16,37 @@
 
 ## 效果预览
 
-示例图较长，README 不直接展开。点击下面的链接查看原图：
+精选示例图会直接展示在 README 中，较长图片保留原图链接查看。
 
 | Skill | 示例 |
 | --- | --- |
 | `wechat-article-collector` | [查看采集效果](./docs/examples/wechat-article-collector.png) |
 | `wechat-comic-longform` | [风格一](./docs/examples/wechat-comic-style-1.png) / [风格二](./docs/examples/wechat-comic-style-2.png) / [风格三](./docs/examples/wechat-comic-style-3.png) |
+| `ai-creator-cover` | [查看全部封面示例](./ai-creator-cover/assets/examples/showcase/) |
+
+### AI 自媒体封面示例
+
+这些示例统一保存在 `ai-creator-cover/assets/examples/showcase/`。真人出镜是主要封面形态，无人像工具封面作为备选方案。
+
+#### 真人封面（主要）
+
+| Codex 01 | Codex 02 | Codex 03 | Codex 04 |
+| --- | --- | --- | --- |
+| <img src="./ai-creator-cover/assets/examples/showcase/selected-cover-01.png" alt="Codex 真人封面示例 01" width="180"> | <img src="./ai-creator-cover/assets/examples/showcase/selected-cover-02.png" alt="Codex 真人封面示例 02" width="180"> | <img src="./ai-creator-cover/assets/examples/showcase/selected-cover-03.png" alt="Codex 真人封面示例 03" width="180"> | <img src="./ai-creator-cover/assets/examples/showcase/selected-cover-04.png" alt="Codex 真人封面示例 04" width="180"> |
+
+| Codex 05 | AI 视频 | 新模型 | 亲和力 |
+| --- | --- | --- | --- |
+| <img src="./ai-creator-cover/assets/examples/showcase/selected-cover-05.png" alt="Codex 真人封面示例 05" width="180"> | <img src="./ai-creator-cover/assets/examples/showcase/selected-cover-06.png" alt="AI 视频真人封面示例" width="180"> | <img src="./ai-creator-cover/assets/examples/showcase/selected-cover-07.png" alt="新模型真人封面示例" width="180"> | <img src="./ai-creator-cover/assets/examples/showcase/friendly-expression-test.png" alt="真人亲和力封面示例" width="180"> |
+
+#### 无人像封面（备选）
+
+| Codex | ChatGPT | Claude Code | Gemini CLI |
+| --- | --- | --- | --- |
+| <img src="./ai-creator-cover/assets/examples/showcase/codex-newbie-start.png" alt="Codex 零基础教程无人像封面" width="180"> | <img src="./ai-creator-cover/assets/examples/showcase/chatgpt-prompt-library.png" alt="ChatGPT 提示词库无人像封面" width="180"> | <img src="./ai-creator-cover/assets/examples/showcase/claude-code-practice.png" alt="Claude Code 实战无人像封面" width="180"> | <img src="./ai-creator-cover/assets/examples/showcase/gemini-cli-intro.png" alt="Gemini CLI 入门无人像封面" width="180"> |
+
+| Cursor |
+| --- |
+| <img src="./ai-creator-cover/assets/examples/showcase/cursor-auto-code.png" alt="Cursor 自动写代码无人像封面" width="180"> |
 
 ## 项目结构
 
@@ -48,6 +73,7 @@ wangyong-skills/
   ai-creator-cover/
     SKILL.md
     requirements.txt
+    assets/examples/showcase/
     profile.md
     references/
 ```
