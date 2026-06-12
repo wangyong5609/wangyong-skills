@@ -26,9 +26,19 @@ credentials.*
 
 # Generated outputs
 output/
+outputs/
+downloads/
 漫画输出/
 *.log
 *.tmp
+
+# AI creator cover local assets and research artifacts
+ai-creator-cover/assets/faces/*/*.jpg
+ai-creator-cover/assets/faces/*/*.jpeg
+ai-creator-cover/assets/faces/*/*.png
+analysis/contact-sheet-*.jpg
+ai-creator-cover/assets/contact-sheets/
+影视飓风数据.xlsx
 
 # macOS icon build artifacts
 *.icns

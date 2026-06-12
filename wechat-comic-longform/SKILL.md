@@ -106,6 +106,12 @@ Read `docs/layout-guide.md` when matching a provided reference or planning a new
 
 Generate panels with `scripts/generate_panels_seedream.py` only when using the Seedream/Doubao batch path. The API key must come from an environment variable or an external `.env` file, and must never be written into tracked repo files.
 
+Install the local layout dependency before running `scripts/build_long_comic.py`:
+
+```bash
+python3 -m pip install -r wechat-comic-longform/requirements.txt
+```
+
 The script resolves API settings with this priority:
 
 1. An explicit `--env-file /path/to/.env`
@@ -116,7 +122,7 @@ Use `DOUBAO_API_KEY` by default. `ARK_API_KEY` is still accepted as a fallback.
 
 ```bash
 export DOUBAO_API_KEY="your-api-key"
-python3 微信公众号漫画长图技能/scripts/generate_panels_seedream.py \
+python3 wechat-comic-longform/scripts/generate_panels_seedream.py \
   --prompts output/comics/文章标题/panel-prompts.json \
   --out-dir output/comics/文章标题/panels \
   --style 风格一 \
@@ -137,7 +143,7 @@ For `风格一`, prefer landscape or moderate-height panels so one image does no
 Then use `scripts/build_long_comic.py`:
 
 ```bash
-python3 微信公众号漫画长图技能/scripts/build_long_comic.py \
+python3 wechat-comic-longform/scripts/build_long_comic.py \
   --spec output/comics/文章标题/article.json \
   --out output/comics/文章标题/文章标题-公众号漫画长图.png
 ```

@@ -1,0 +1,4 @@
+interface:
+  display_name: "AI 自媒体封面设计"
+  short_description: "Plan 模式生成 AI 自媒体视频封面：访谈 → 方案卡 → 提示词 → 生图"
+  default_prompt: "Use $ai-creator-cover to design a vertical Chinese video cover. Load profile.md first, interview me in plan mode, present a cover plan card for confirmation, then compile the Chinese image prompt."

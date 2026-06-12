@@ -13,7 +13,7 @@ skill-name/
   agents/ or config/
 ```
 
-Current examples include `macos-app-icon/`, `wechat-article-collector/`, `微信公众号漫画长图技能/`, and `life-interview-planner/`. Put reusable Python or shell helpers in `scripts/`, reference material in `docs/` or `references/`, static prompt/data files in `templates/`, and model or agent settings in `agents/` or `config/`.
+Current examples include `macos-app-icon/`, `wechat-article-collector/`, `wechat-comic-longform/`, `life-interview-planner/`, and `ai-creator-cover/`. Put reusable Python or shell helpers in `scripts/`, reference material in `docs/` or `references/`, static prompt/data files in `templates/`, and model or agent settings in `agents/` or `config/`.
 
 ## Build, Test, and Development Commands
 
@@ -48,6 +48,7 @@ No formal test framework is configured at the root. For script-based skills, add
 
 ```bash
 python3 -m py_compile wechat-article-collector/scripts/collect_wechat_articles.py
+python3 -m py_compile wechat-comic-longform/scripts/build_long_comic.py
 python3 wechat-article-collector/scripts/collect_wechat_articles.py --help
 ```
 
