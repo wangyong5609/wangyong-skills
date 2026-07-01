@@ -118,7 +118,7 @@ def block_height(block, draw, fonts, spec_dir, canvas_width):
         img = Image.open(resolve_path(spec_dir, block["path"]))
         img = fit_image(img.convert("RGB"), int(block.get("width", canvas_width - 60)))
         if t == "framed_image":
-            header_h = int(block.get("header_height", 54 if block.get("header") else 0))
+            header_h = int(block.get("header_height", 0))
             border = int(block.get("border", 10))
             return pad_top + header_h + img.height + border * 2 + pad_bottom
         return pad_top + img.height + pad_bottom
@@ -133,6 +133,9 @@ def block_height(block, draw, fonts, spec_dir, canvas_width):
         lines = wrap_cjk(draw, block.get("text", ""), font, content_w)
         line_h = math.ceil(font.size * 1.25)
         return pad_top + len(lines) * line_h + max(0, len(lines) - 1) * line_h * 0.15 + pad_bottom
+    if t == "badge":
+        size = int(block.get("size", 30))
+        return pad_top + size + pad_bottom
     if t == "spacer":
         return int(block.get("height", 40))
     if t == "rule":
@@ -157,6 +160,8 @@ def default_pad_top(t):
         "text_bars": 22,
         "emphasis": 42,
         "section_label": 46,
+        "badge": 28,
+        "brush_text": 22,
         "callout": 30,
         "rule": 40,
     }.get(t, 28)
@@ -172,6 +177,8 @@ def default_pad_bottom(t):
         "text_bars": 22,
         "emphasis": 42,
         "section_label": 20,
+        "badge": 22,
+        "brush_text": 34,
         "callout": 30,
         "rule": 36,
     }.get(t, 24)
@@ -203,6 +210,8 @@ def font_for_block(t, fonts, block):
         return fonts.get("emphasis", fonts["heading"])
     if t == "section_label":
         return fonts.get("section_label", fonts["heading"])
+    if t == "brush_text":
+        return fonts.get("brush", fonts["heading"])
     return fonts["body"]
 
 
@@ -220,32 +229,36 @@ def line_color(line, default):
     return line.get("color", default) if isinstance(line, dict) else default
 
 
-def draw_speech_bubbles(draw, bubbles, origin_x, origin_y, panel_w, panel_h, font):
-    for bubble in bubbles or []:
-        x = origin_x + int(bubble.get("x", 0))
-        y = origin_y + int(bubble.get("y", 0))
-        w = int(bubble.get("width", panel_w * 0.35))
-        h = int(bubble.get("height", 72))
-        radius = int(bubble.get("radius", 18))
-        fill = bubble.get("fill", "#ffffff")
-        outline = bubble.get("outline", "#111111")
-        draw.rounded_rectangle((x, y, x + w, y + h), radius=radius, fill=fill, outline=outline, width=int(bubble.get("outline_width", 2)))
-        if bubble.get("tail"):
-            tx = origin_x + int(bubble["tail"][0])
-            ty = origin_y + int(bubble["tail"][1])
-            base_y = y + h - radius
-            draw.polygon([(x + w * 0.45, base_y), (x + w * 0.62, base_y), (tx, ty)], fill=fill, outline=outline)
-        render_text(
-            draw,
-            x + 12,
-            y + 10,
-            w - 24,
-            bubble.get("text", ""),
-            font,
-            bubble.get("text_color", "#111111"),
-            bubble.get("align", "center"),
-            int(bubble.get("line_gap", 2)),
-        )
+def iter_blocks(blocks):
+    for block in blocks:
+        if not isinstance(block, dict):
+            continue
+        yield block
+        for value in block.values():
+            if isinstance(value, list):
+                yield from iter_blocks(value)
+            elif isinstance(value, dict):
+                yield from iter_blocks([value])
+
+
+def validate_no_in_panel_text_overlays(spec):
+    for block in iter_blocks(spec.get("blocks", [])):
+        block_type = block.get("type")
+        if block_type == "title":
+            raise ValueError(
+                "article title blocks are not supported. Keep the WeChat article title outside "
+                "the long image and start article.json with the first body beat."
+            )
+        if block_type in {"image", "framed_image"} and "speech_bubbles" in block:
+            raise ValueError(
+                "speech_bubbles overlays are not supported. Put panel dialogue, labels, "
+                "and bubble text in the image-generation prompt so the image model renders them."
+            )
+        if block_type == "framed_image" and "header" in block:
+            raise ValueError(
+                "framed_image.header overlays are not supported. Put panel titles in the "
+                "image-generation prompt, or use a separate heading/section_label block outside the panel."
+            )
 
 
 def draw_block(img, draw, y, block, fonts, spec_dir):
@@ -275,33 +288,43 @@ def draw_block(img, draw, y, block, fonts, spec_dir):
                 img.paste(pasted.convert("RGB"), (x, y), pasted.getchannel("A"))
             else:
                 img.paste(panel, (x, y))
-        draw_speech_bubbles(draw, block.get("speech_bubbles"), x, y, panel.width, panel.height, fonts["bubble"])
         return y + panel.height + pad_bottom
     if t == "framed_image":
         panel = Image.open(resolve_path(spec_dir, block["path"])).convert("RGB")
         panel = fit_image(panel, int(block.get("width", canvas_width - 84)))
         frame_w = panel.width + int(block.get("border", 10)) * 2
         border = int(block.get("border", 10))
-        header_h = int(block.get("header_height", 54 if block.get("header") else 0))
+        header_h = int(block.get("header_height", 0))
         frame_h = header_h + panel.height + border * 2
         x = (canvas_width - frame_w) // 2
         radius = int(block.get("radius", 18))
         frame_color = block.get("frame_color", "#050505")
         draw.rounded_rectangle((x, y, x + frame_w, y + frame_h), radius=radius, fill=frame_color)
-        if block.get("header"):
-            render_text(draw, x + border, y + 13, frame_w - border * 2, block["header"], fonts["framed_header"], block.get("header_color", "#ffffff"), "center", 0)
         panel_x = x + border
         panel_y = y + header_h + border
         inner_radius = max(6, radius - border)
         mask = Image.new("L", panel.size, 0)
         ImageDraw.Draw(mask).rounded_rectangle((0, 0, panel.width, panel.height), radius=inner_radius, fill=255)
         img.paste(panel, (panel_x, panel_y), mask)
-        draw_speech_bubbles(draw, block.get("speech_bubbles"), panel_x, panel_y, panel.width, panel.height, fonts["bubble"])
         return y + frame_h + pad_bottom
     if t == "rule":
         margin = int(block.get("margin_x", 120))
         draw.line((margin, y, canvas_width - margin, y), fill=block.get("color", "#d9d9d9"), width=1)
         return y + 1 + pad_bottom
+    if t == "badge":
+        text = str(block.get("text", "1"))
+        size = int(block.get("size", 30))
+        radius = int(block.get("radius", 7))
+        fill = block.get("fill", "#b64d50")
+        text_color = block.get("text_color", "#ffffff")
+        font = load_font(int(block.get("font_size", 22)), bold=True, font_path=block.get("font"))
+        x = (canvas_width - size) // 2
+        draw.rounded_rectangle((x, y, x + size, y + size), radius=radius, fill=fill)
+        tw = text_width(draw, text, font)
+        box = draw.textbbox((0, 0), text, font=font)
+        th = box[3] - box[1]
+        draw.text((x + (size - tw) / 2, y + (size - th) / 2 - 1), text, font=font, fill=text_color)
+        return y + size + pad_bottom
 
     margin_x = int(block.get("margin_x", 48))
     content_w = int(block.get("text_width", canvas_width - margin_x * 2))
@@ -374,6 +397,7 @@ def build(spec_path, out_path):
     spec_path = Path(spec_path)
     spec_dir = spec_path.parent
     spec = json.loads(spec_path.read_text(encoding="utf-8"))
+    validate_no_in_panel_text_overlays(spec)
     canvas_width = int(spec.get("canvas_width", 600))
     probe = Image.new("RGB", (canvas_width, 100), "white")
     draw = ImageDraw.Draw(probe)
@@ -387,8 +411,7 @@ def build(spec_path, out_path):
         "bar": load_font(int(spec.get("bar_size", 24)), bold=True, font_path=font_path),
         "emphasis": load_font(int(spec.get("emphasis_size", spec.get("heading_size", 34))), bold=True, font_path=font_path),
         "section_label": load_font(int(spec.get("section_label_size", 36)), bold=True, font_path=font_path),
-        "framed_header": load_font(int(spec.get("framed_header_size", 30)), bold=True, font_path=font_path),
-        "bubble": load_font(int(spec.get("bubble_size", 20)), bold=True, font_path=font_path),
+        "brush": load_font(int(spec.get("brush_size", 38)), bold=True, font_path=font_path),
     }
     heights = [block_height(b, draw, fonts, spec_dir, canvas_width) for b in spec["blocks"]]
     total_height = max(1, int(sum(heights) + spec.get("bottom_padding", 64)))

@@ -1,0 +1,52 @@
+{
+  "name": "暖白手绘漫画",
+  "aliases": [
+    "暖白手绘漫画",
+    "暖白手绘",
+    "暖白漫画",
+    "warm-white-handdrawn"
+  ],
+  "description": "适合科普、生活解释、成长和情绪安抚类公众号漫画长图。图片保持无字，由布局脚本渲染标题、正文、提示和收束文字。",
+  "default": true,
+  "text_policy": "wordless",
+  "generation_mode": "prompt-only from this style profile; generated panel art must contain no text",
+  "layout": {
+    "canvas_width": 600,
+    "background": "#ffffff",
+    "rhythm": "标题 -> 短居中段落 -> 暖白手绘图片 -> 小标题 -> 解释段落 -> 图片 -> callout -> 收束",
+    "preferred_blocks": [
+      "title",
+      "paragraph",
+      "heading",
+      "image",
+      "callout",
+      "rule"
+    ],
+    "template": "templates/article-template.json"
+  },
+  "copy": {
+    "tone": "口语、温和、轻解释、少说教",
+    "line_length": "短居中文案每个视觉行尽量不超过 45 个汉字",
+    "punctuation": "短居中文案行尾去掉不必要的逗号、句号、分号、冒号"
+  },
+  "art_direction": {
+    "line": "干净黑色手绘线条，完成稿质感，不能像草稿或脏灰铅笔稿",
+    "color": "白底或柔和浅色背景，克制暖色，局部可用干净黑白线稿",
+    "characters": "完整、自然、表情可读的人物；一人一个头，五官、颈部、躯干、四肢和手脚关系清楚",
+    "scenes": "日常生活、科普隐喻、简单对话、清晰物件和轻松场景",
+    "composition": "单一主体、留白充足、移动端可读，避免复杂拥挤背景"
+  },
+  "style_prompt": "WORDLESS IMAGE ONLY. standalone warm children's book style illustration, finished polished illustration quality, clean black ink linework, restrained warm colors, soft white or pastel background, clear central subject, gentle expressive characters, anatomically coherent complete human figures, one head per person, clear face neck torso arms hands legs feet, natural joints, natural posture, correct scale relationships, emotionally readable expressions, simple uncluttered mobile-readable composition, purely visual illustration, the image must contain zero writing, zero typography, zero symbols, zero readable marks, no Chinese characters, no English letters, no numbers, no captions, no speech bubbles, no comic sound effects, no title text, no handwriting, no labels, no poster text, no UI text, all screens, books, clocks, papers, signs, whiteboards, posters, product surfaces, walls, backgrounds must be blank or abstract, no watermark, no logo, no rough storyboard, no messy pencil draft, no dirty gray shading, no distorted faces, no duplicate heads, no floating facial parts, no detached hair, no extra limbs, no missing limbs, no fused bodies, no broken hands, no backward joints, no stick figures, no bean bodies, no blob people, no pictogram icons",
+  "quality_gate": [
+    "图片必须是无字插画，不能出现中文、英文、数字、标题、标签、气泡文字、屏幕文字、招牌文字、水印或 logo",
+    "人物必须完整自然，不能怪脸、多头、头发或五官漂浮、多人融合、坏手、缺肢或关节反向",
+    "画面必须像公众号成稿插画，不能是低质量草稿、脏灰铅笔稿、恐怖/阴郁漫画或 3D 写实",
+    "同一篇长图内线条、配色和完成度要稳定"
+  ],
+  "prompt_recipe": {
+    "generation_mode": "prompt-only after the style profile exists",
+    "source_image_rule": "Generate wordless illustration panels only; all Chinese article text is rendered by build_long_comic.py.",
+    "caption_rule": "Do not put caption text into the image prompt for this style.",
+    "negative_rule": "Forbid all written language, numbers, symbols, watermarks, logos, UI labels, poster text, and screen text."
+  }
+}

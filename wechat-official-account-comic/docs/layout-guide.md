@@ -6,10 +6,11 @@ Use this guide to create an original Chinese public-account comic long image wit
 
 - Narrow vertical canvas around 600px wide.
 - White background with generous top, side, and vertical whitespace.
+- The WeChat article title is not part of the long image; start from the first body beat, section label, badge, or opening panel.
 - Short Chinese paragraphs centered on the page; avoid dense prose.
 - Explanatory sequence alternates between text and large illustrations.
 - Section headings are bold, direct, and conversational.
-- Orange speech bubbles or callouts provide jokes, objections, or narrator comments.
+- Orange callout blocks provide jokes, objections, or narrator comments outside panel art.
 - Some panels are colored scenes; some are black-and-white line cartoons.
 - Use simple recurring narrator/reader characters, but create original characters for each project.
 
@@ -35,14 +36,16 @@ For multi-style work, read `style-guide.md` first and then apply this document o
 
 ## Style-Specific Layout Blocks
 
-- `text_bars`: stacked colored narration bars, best for `风格二`.
-- `emphasis`: large centered thesis text, usually red in `风格二`.
-- `section_label`: outlined section titles or takeaways, best for `风格三`.
-- `framed_image`: black rounded comic panels with optional header text, best for `风格三`.
-- `speech_bubbles`: deterministic Chinese dialogue overlays on `image` or `framed_image` blocks.
+- `text_bars`: stacked colored narration bars, best for `蓝栏柔彩漫画`.
+- `emphasis`: large centered thesis text, usually red in `蓝栏柔彩漫画`.
+- `section_label`: outlined section titles or takeaways, best for `绿底粗线漫画`.
+- `framed_image`: black rounded comic panels, best for `绿底粗线漫画`.
 
 ## Prompt Notes
 
-Ask Seedream for no text in panel art. Chinese text, titles, labels, and speech should be added by the layout script for reliable rendering.
+Follow the selected style profile's `text_policy`.
 
-When a chart, family tree, or timeline is needed, generate only the illustration background or icons, then compose exact labels with the script or a separate deterministic renderer.
+- For `wordless` styles, ask the image model for no text in panel art. Chinese article body text, section labels, and dialogue should be placed in separate outside-layout text blocks for reliable rendering.
+- For `model-rendered` styles, every in-panel label, dialogue, bubble, chat message, caption, or sound effect must be quoted in the prompt and rendered directly by the image model. The WeChat article title is never in-panel text. Do not add deterministic `speech_bubbles` or `framed_image.header` overlays afterward; the layout script rejects those fields.
+
+When a chart, family tree, or timeline is needed in a `wordless` style, generate only the illustration background or icons, then place exact labels as separate layout blocks or use a dedicated deterministic chart renderer outside the comic panel image.

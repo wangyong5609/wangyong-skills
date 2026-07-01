@@ -1,0 +1,4 @@
+interface:
+  display_name: "公众号漫画长图"
+  short_description: "生成多风格公众号漫画长图"
+  default_prompt: "Use $wechat-official-account-comic to guide me through choosing a comic theme and style, then create a publishable WeChat public-account comic article. I can specify 暖白手绘漫画, 蓝栏柔彩漫画, 绿底粗线漫画, 小林诗意治愈, 小林生活讽刺, 小林奇想涂鸦, or another trained style profile."

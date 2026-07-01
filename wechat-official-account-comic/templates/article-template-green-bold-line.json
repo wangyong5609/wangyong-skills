@@ -1,0 +1,22 @@
+{
+  "style": "绿底粗线漫画",
+  "canvas_width": 691,
+  "background": "#88a846",
+  "background_pattern": "soft_diagonal",
+  "background_pattern_color": "#7f9f3f",
+  "body_size": 25,
+  "section_label_size": 38,
+  "bottom_padding": 90,
+  "blocks": [
+    {"type": "paragraph", "text": "这个同事 Jane 在想：\n上班第一年的我，和上班第五年的我，\n差别到底在哪里？", "color": "#ffffff", "stroke_width": 3, "stroke_fill": "#222222", "pad_top": 46, "pad_bottom": 28},
+    {"type": "image", "path": "panels/panel-01.png", "width": 610, "radius": 20},
+    {"type": "section_label", "text": "01 遇上内卷", "color": "#ffffff", "stroke_width": 3, "stroke_fill": "#1a1a1a"},
+    {"type": "framed_image", "path": "panels/panel-02.png", "width": 610},
+    {"type": "framed_image", "path": "panels/panel-03.png", "width": 610},
+    {"type": "section_label", "text": "摸清自己的身体极限\n守住适合自己的工作节奏，效率反而更高", "color": "#ffffff", "stroke_width": 3, "stroke_fill": "#1a1a1a", "font_size": 30},
+    {"type": "section_label", "text": "02 遇上聚餐邀约", "color": "#ffffff", "stroke_width": 3, "stroke_fill": "#1a1a1a"},
+    {"type": "framed_image", "path": "panels/panel-04.png", "width": 610},
+    {"type": "framed_image", "path": "panels/panel-05.png", "width": 610},
+    {"type": "section_label", "text": "不临时邀约打断既定计划\n坚持自己的生活节奏，好让状态始终在线", "color": "#ffffff", "stroke_width": 3, "stroke_fill": "#1a1a1a", "font_size": 30}
+  ]
+}

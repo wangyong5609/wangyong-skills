@@ -2,8 +2,7 @@
   "canvas_width": 600,
   "background": "#ffffff",
   "blocks": [
-    {"type": "title", "text": "这里换成你的主题标题"},
-    {"type": "paragraph", "text": "这里写开场钩子，最好是读者一眼能代入的日常问题。"},
+    {"type": "paragraph", "text": "这里写开场钩子，最好是读者一眼能代入的日常问题。", "pad_top": 58},
     {"type": "image", "path": "panels/panel-01.png", "width": 540},
     {"type": "heading", "text": "首先，给一个直接结论"},
     {"type": "paragraph", "text": "用两三句短话解释，不要把公众号长图写成论文。"},

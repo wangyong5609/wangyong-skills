@@ -1,0 +1,79 @@
+{
+  "name": "小林生活讽刺",
+  "aliases": [
+    "小林风格2",
+    "小林风格 2",
+    "小林漫画2",
+    "小林漫画 2",
+    "小林生活观察",
+    "小林生活讽刺",
+    "xiaolin-life-satire"
+  ],
+  "description": "适合家庭关系、职场压力、中年处境、社会观察和冷幽默段子类公众号漫画长图。每张源图同时包含人物小品水彩场景和手写中文 punchline caption。",
+  "text_policy": "model-rendered",
+  "generation_mode": "prompt-only after training; panel prompts must include quoted caption text and generate the caricature scene plus caption as one bitmap; do not attach the original reference screenshot for normal generation",
+  "production_workflow": {
+    "requires_topic": true,
+    "requires_copy_confirmation": true,
+    "requires_prompt_confirmation": true,
+    "requires_panel_acceptance": true,
+    "default_order": "approved_beat_order",
+    "layout_after_all_panels_accepted": true
+  },
+  "layout": {
+    "canvas_width": 600,
+    "background": "#ffffff",
+    "rhythm": "标题可选 -> 红色编号小方牌 -> 完整源图（上方或中部人物小品水彩漫画 + 下方黑色手写中文 caption）-> 大留白，重复 5-8 个分镜",
+    "preferred_blocks": [
+      "badge",
+      "image",
+      "spacer"
+    ],
+    "template": "templates/article-template-xiaolin-life-satire.json"
+  },
+  "copy": {
+    "tone": "克制、讽刺、生活观察、冷幽默，先像聊天再突然转折",
+    "line_length": "每行 8-18 个汉字，通常 2-5 行一组；金句可短，段子 punchline 可稍长",
+    "structure": "熟悉生活场景 -> 反常识观察 -> 人情或现实压力的转折 -> 一句轻微刺痛的结论",
+    "punctuation": "少用句号和逗号；可以保留问号、感叹号、省略号来制造段子节奏",
+    "prompt_rule": "每一行 caption 都必须在 panel prompt 中用英文双引号包裹；生成图里只能出现这些被引号包住的文字"
+  },
+  "art_direction": {
+    "line": "松散粗糙的黑褐色手绘线条，略脏、略抖、不完全封闭，像速写加水彩，不要精致干净",
+    "color": "低饱和透明水彩，肉粉、土黄、浅蓝、灰绿、暖棕、淡红为主，局部有水痕和纸面感",
+    "characters": "夸张但完整的中国普通人：中年人、老人、父母、孩子、上班族、小老板、医生或邻居；允许红鼻头、皱眉、驼背、摊手、疲惫坐姿，不使用固定角色身份",
+    "scenes": "饭桌、沙发、办公室、病房、公交、居民楼、街边店、牌桌、学校门口、楼道、床、餐桌和日常小物件",
+    "composition": "大量白底留白，人物小品占画面上半部或中部，场景小而清楚，caption 区在下方居中；一张图只讲一个生活观察或反讽笑点",
+    "caption_lettering": "黑色手写毛笔字/马克笔字，墨色浓、笔画粗细不均、边缘毛糙、字形略歪但清晰；不是宋体、黑体、楷体、PingFang、字幕字或规则数字字体"
+  },
+  "style_prompt": "Complete original Chinese WeChat watercolor caricature comic source image as one bitmap. The upper or middle area is a loose satirical life-observation watercolor caricature scene on a clean white paper background: rough black-brown hand-drawn ink lines, slightly shaky incomplete contours, transparent low-saturation watercolor washes, visible paper texture, small everyday Chinese life scene, exaggerated but humane adult characters, tired faces, red noses, hunched shoulders, awkward gestures, simple props such as sofa, dining table, office desk, cards, building, bus, bed, bag, phone, cup or documents, sparse background, plenty of white margin, mobile-readable composition, finished public-account hand-painted cartoon quality but not polished anime. The lower area must contain the exact Chinese caption lines wrapped in double quotation marks in the scene prompt, rendered as large black handwritten Chinese brush lettering or marker lettering: dense black ink, uneven thick-and-thin strokes, rough dry-brush edges, organic imperfect character shapes, slightly relaxed hand spacing, centered 2-5 lines, generous line gap. Render only the quoted Chinese caption text, copy it exactly without rewriting, shortening, replacing, adding, or dropping characters. Do not use Songti, Heiti, Kaiti, PingFang, typed subtitle text, clean vector calligraphy, digital font, or printed typography. No unquoted text, no extra Chinese characters, no English letters, no random numbers, no labels, no UI text, no QR code, no watermark, no logo, no signature, no account name, no copied author identity, no copied fixed character, no photorealism, no glossy anime, no 3D, no dense background, no inspirational nature-poster look, no overly pretty healing landscape, no malformed hands, no distorted faces, no duplicate heads, no extra limbs, no missing limbs",
+  "quality_gate": [
+    "第一眼必须是白底、红编号可外置、粗糙水彩人物小品、下方黑色手写中文 caption 的公众号源图风格",
+    "每张源图必须同时包含人物/生活场景小品和下方黑色手写中文 caption，不再由布局脚本后期拼 caption",
+    "图片里只能出现 panel prompt 中用英文双引号包住的 caption 文案，必须逐字准确、清晰、居中",
+    "caption 字形要像黑色手写毛笔字或马克笔字，粗细不均、墨色浓、边缘毛糙，不能像系统字体、宋体、黑体、楷体、字幕字或规则矢量字",
+    "不得出现二维码、水印、署名、账号名、logo、英文、随机数字、乱码或任何未被引号包住的额外文字",
+    "不要复制参考图中的固定文案、二维码、署名、作者身份和固定人物造型",
+    "主题应是生活观察或轻讽刺，不要漂成纯治愈自然风景；如果没有人物或日常道具，通常需要重生成",
+    "人物可以夸张但必须完整可读，不能多头、坏手、缺肢、五官漂浮或多人融合",
+    "水彩要松散、有手作感，不能变成精致日漫、写实插画、厚涂、3D 或海报设计"
+  ],
+  "prompt_recipe": {
+    "generation_mode": "prompt-only after training; no reference screenshot for normal production",
+    "source_image_rule": "Generate one complete source image as one bitmap, not illustration-only art and not post-composited text.",
+    "layout_rule": "Vertical white paper canvas; upper or middle area is a rough watercolor caricature life scene; lower area is a centered 2-5 line handwritten Chinese caption; leave clear white space around both parts.",
+    "caption_rule": "Use a Text to render exactly block. Put every caption line in English double quotation marks. Render only those quoted Chinese strings and copy them exactly.",
+    "typography_rule": "Large black handwritten Chinese brush or marker lettering, dense ink, uneven thick-and-thin strokes, rough dry-brush edges, organic imperfect character shapes, centered lines, generous line gap.",
+    "negative_rule": "No QR code, watermark, logo, signature, account name, copied author identity, English letters, random numbers, UI text, labels, or any unquoted text.",
+    "example_panel_prompt": "Upper illustration: a tired middle-aged office worker slumps on a sofa while a tiny pile of bills and phone notifications sits beside him, loose rough watercolor caricature, white paper margin. Text to render exactly: \"当我累了\" \"我不是想躺平\" \"只是想少被生活推一下\". Lower caption must be centered black handwritten brush lettering."
+  },
+  "validated_test": {
+    "mode": "Reference analysis only in this update; prompt-only image smoke test not yet recorded.",
+    "result": "Profile distilled from the provided long screenshot's reusable traits: rough watercolor caricature people, white-space vertical rhythm, red numbered badges handled by layout, and lower handwritten Chinese punchline captions in each source image.",
+    "known_drift_and_tuning": [
+      "If the output becomes too gentle or scenic, add ordinary people, awkward posture, everyday props, rougher caricature linework, and a sharper life-observation punchline.",
+      "If the output copies QR code, side signature, account name, or reference phrases, reject it and repeat the no brand/no unquoted text rules.",
+      "If any Chinese character is wrong, missing, replaced, or garbled, regenerate the panel before stitching."
+    ]
+  }
+}

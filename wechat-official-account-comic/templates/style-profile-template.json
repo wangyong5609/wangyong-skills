@@ -1,0 +1,55 @@
+{
+  "name": "示例训练风格",
+  "aliases": [
+    "example-trained-style"
+  ],
+  "description": "一句话说明这个漫画风格适合做什么主题。",
+  "text_policy": "wordless",
+  "layout": {
+    "canvas_width": 600,
+    "background": "#ffffff",
+    "rhythm": "开场正文 -> 图片 -> 小标题 -> 图片 -> 收束；公众号文章标题不进入长图",
+    "preferred_blocks": [
+      "paragraph",
+      "heading",
+      "image",
+      "callout"
+    ],
+    "template": "templates/article-template-example-trained-style.json"
+  },
+  "copy": {
+    "tone": "口语、轻解释、少说教",
+    "line_length": "每个视觉行尽量不超过 45 个汉字",
+    "punctuation": "短居中文案行尾去掉不必要的逗号、句号、分号、冒号"
+  },
+  "art_direction": {
+    "line": "描述线条粗细、是否手绘、是否干净",
+    "color": "描述主色、辅助色、饱和度和背景质感",
+    "characters": "描述人物年龄段、比例、服装和表情范围，只保留宽泛人设",
+    "scenes": "描述常见场景、道具和构图"
+  },
+  "style_prompt": "WORDLESS IMAGE ONLY. Replace this with the reusable positive prompt fragment for the trained style. Include linework, color palette, character proportions, scene language, finish quality, composition, and mobile readability requirements. For wordless profiles, forbid all written language, numbers, labels, UI text, logos, watermarks, and signatures.",
+  "quality_gate": [
+    "不复制账号名称、标题栏、固定角色、logo、水印或署名",
+    "人物脸部、手部、四肢和多人关系必须自然完整",
+    "同一篇长图内线条、配色、角色比例和完成度要一致",
+    "wordless 风格的生成图片内不能出现任何文字或数字",
+    "model-rendered 风格只能渲染提示词中用引号包住的中文"
+  ],
+  "prompt_recipe": {
+    "generation_mode": "prompt-only after the style profile exists; use reference screenshots only for training or drift comparison",
+    "source_image_rule": "Describe whether each generated image is wordless art, an in-panel text comic, or a complete source image that includes caption text.",
+    "caption_rule": "For model-rendered text, put every exact Chinese string in double quotation marks and specify placement. For wordless styles, keep this empty or say all text is rendered by layout.",
+    "typography_rule": "Describe lettering/font/handwriting traits when text is model-rendered. If no known font exists, describe visible stroke behavior instead of naming a local font.",
+    "negative_rule": "List forbidden artifacts: extra text, garbled text, QR code, watermark, logo, signature, account name, copied identity, anatomy failures, or style drift.",
+    "example_panel_prompt": "One tested prompt skeleton or short example that future agents can adapt."
+  },
+  "validated_test": {
+    "mode": "Record provider and whether the test was prompt-only or reference-assisted.",
+    "result": "Record what passed: exact text, style match, layout, no forbidden artifacts.",
+    "known_drift_and_tuning": [
+      "Record observed drift and the prompt adjustment that reduces it.",
+      "Record regeneration rules for text or image failures."
+    ]
+  }
+}

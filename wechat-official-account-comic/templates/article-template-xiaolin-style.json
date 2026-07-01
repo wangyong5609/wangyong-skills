@@ -1,0 +1,43 @@
+{
+  "style": "小林风格",
+  "canvas_width": 600,
+  "background": "#ffffff",
+  "body_size": 26,
+  "bottom_padding": 120,
+  "blocks": [
+    {
+      "type": "badge",
+      "text": "1",
+      "pad_top": 42
+    },
+    {
+      "type": "image",
+      "path": "panels/panel-01.png",
+      "width": 520,
+      "pad_top": 42,
+      "pad_bottom": 78
+    },
+    {
+      "type": "badge",
+      "text": "2"
+    },
+    {
+      "type": "image",
+      "path": "panels/panel-02.png",
+      "width": 520,
+      "pad_top": 42,
+      "pad_bottom": 78
+    },
+    {
+      "type": "badge",
+      "text": "3"
+    },
+    {
+      "type": "image",
+      "path": "panels/panel-03.png",
+      "width": 520,
+      "pad_top": 42,
+      "pad_bottom": 40
+    }
+  ]
+}

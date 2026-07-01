@@ -1,0 +1,48 @@
+{
+  "name": "蓝栏柔彩漫画",
+  "aliases": [
+    "蓝栏柔彩漫画",
+    "蓝栏柔彩",
+    "蓝条心理叙事",
+    "blue-bar-soft-color"
+  ],
+  "description": "适合关系、心理、成长和生活选择类公众号漫画长图。图片保持无字，蓝色叙事栏、黄色强调和红色结论由布局脚本渲染。",
+  "text_policy": "wordless",
+  "generation_mode": "prompt-only from this style profile; generated panel art must contain no text or blue text bars",
+  "layout": {
+    "canvas_width": 703,
+    "background": "#ffffff",
+    "rhythm": "柔和彩色开场图 -> 蓝色叙事栏 -> 黄字强调 -> 柔彩图片 -> 红色 thesis -> 重复情绪推进",
+    "preferred_blocks": [
+      "image",
+      "text_bars",
+      "emphasis"
+    ],
+    "template": "templates/article-template-blue-bar-soft-color.json"
+  },
+  "copy": {
+    "tone": "温柔、克制、像咨询师对读者说话",
+    "line_length": "蓝栏文字短句为主，每行一句清晰判断",
+    "punctuation": "少用装饰性标点，红色强调段落可以保留必要冒号"
+  },
+  "art_direction": {
+    "line": "干净但不油亮的手绘漫画线条，黑线略粗，成人比例克制",
+    "color": "暖阳、浅金、奶油、柔绿和低对比水彩，边缘可淡出白底",
+    "characters": "可出现年轻中国女性心理咨询师和女性来访者，也可用无脸奶油色象征人物",
+    "scenes": "咨询室、沙发、窗边、书、杯子、植物、床、路径、花和柔和户外隐喻",
+    "composition": "安静、舒展、适合叠加蓝色文字栏的公众号长图节奏"
+  },
+  "style_prompt": "WORDLESS IMAGE ONLY. soft psychological WeChat longform comic illustration panel, portrait-oriented scene, clean but not glossy hand-drawn manga line art, slightly thicker black outlines, simple elegant facial features, restrained adult proportions, flat warm colors with light watercolor wash, white glow fade at top and bottom edges, airy white-space friendly composition, when the scene needs people, use these character types: a calm young adult Chinese female psychological consultant with straight black shoulder-length hair, mustard cardigan or light blazer over cream turtleneck; or a young adult Chinese female client with long black hair, white shirt and muted green vest or green dress. For metaphor scenes, simple faceless cream-colored mascot figures, paths, flowers, phones, cups, windows, and symbolic objects are allowed; do not force the recurring women into every metaphor panel. warm sunlight, cozy counseling room, yellow sofa, plants, books, desk, bed, cup, vase, bright window, gentle outdoor metaphors, soft golden-beige palette, quiet relationship-healing mood, emotional but restrained expressions, finished public-account comic quality, the generated image must contain zero written language and zero typography; all blue narration bars and all article text will be added later by the layout script, never draw them inside the panel; no glossy high-detail anime rendering, no cinematic photorealism, no over-rendered skin, no childlike cute style, no harsh contrast, no grim manga, no rough sketch, no dirty gray shading, no logo, no watermark, no Chinese characters, no English letters, no numbers, no captions, no labels, no UI text, no blue text bars, no colored text strips, no speech-bubble text; speech bubbles or thought bubbles may appear only when requested, and their interiors must remain blank unless final rendered text is explicitly required",
+  "quality_gate": [
+    "图片必须无字，不能出现蓝色文字栏、中文、英文、数字、字幕、标签、水印或 logo",
+    "整体情绪要柔和、低对比、心理叙事感强，不能变成高光日漫、写实影视或儿童萌系",
+    "人物脸部和肢体必须自然完整，不能畸形、多头、坏手或多人融合",
+    "图片边缘和留白要适合与蓝色叙事栏、红色强调文字共同排版"
+  ],
+  "prompt_recipe": {
+    "generation_mode": "prompt-only after the style profile exists",
+    "source_image_rule": "Generate wordless soft-color illustration panels only; text bars and emphasis copy are rendered by layout.",
+    "caption_rule": "Do not put article text or blue bar text into the image prompt.",
+    "negative_rule": "Forbid all written language, numbers, blue bars, labels, watermarks, logos, UI text, and speech-bubble text."
+  }
+}

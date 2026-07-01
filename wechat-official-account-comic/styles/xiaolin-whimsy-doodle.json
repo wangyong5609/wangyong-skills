@@ -1,0 +1,84 @@
+{
+  "name": "小林奇想涂鸦",
+  "aliases": [
+    "小林风格3",
+    "小林风格 3",
+    "小林漫画3",
+    "小林漫画 3",
+    "小林奇想",
+    "小林奇想涂鸦",
+    "小林脑洞哲思",
+    "xiaolin-whimsy-doodle"
+  ],
+  "description": "适合奇想哲理、可爱动物、怪物物件、轻幽默金句类公众号漫画长图。每张源图同时包含小幅涂鸦水彩插画和黑色手写中文 caption。",
+  "text_policy": "model-rendered",
+  "generation_mode": "prompt-only after training; panel prompts must include quoted caption text and generate the whimsical doodle scene plus caption as one bitmap; do not attach the original reference screenshot for normal generation",
+  "production_workflow": {
+    "requires_topic": true,
+    "requires_copy_confirmation": true,
+    "requires_prompt_confirmation": true,
+    "requires_panel_acceptance": true,
+    "default_order": "approved_beat_order",
+    "layout_after_all_panels_accepted": true
+  },
+  "layout": {
+    "canvas_width": 600,
+    "background": "#ffffff",
+    "rhythm": "标题可选 -> 红色编号小方牌 -> 完整源图（小幅奇想涂鸦/动物/物件水彩 + 下方黑色手写中文 caption）-> 大留白，重复 6-10 个分镜",
+    "preferred_blocks": [
+      "badge",
+      "image",
+      "spacer"
+    ],
+    "template": "templates/article-template-xiaolin-whimsy-doodle.json"
+  },
+  "copy": {
+    "tone": "温柔、脑洞、轻哲理、冷幽默，像随手画出来的一句人生观察",
+    "line_length": "每行 7-16 个汉字，通常 2-5 行一组；短句可俏皮，结尾要有轻轻一转",
+    "structure": "可爱或荒诞物象 -> 日常心理联想 -> 温柔或反常识结论",
+    "punctuation": "少用句号和逗号；问号、省略号和引号可以保留，但不要让标点压过手写感",
+    "prompt_rule": "每一行 caption 都必须在 panel prompt 中用英文双引号包裹；生成图里只能出现这些被引号包住的文字"
+  },
+  "art_direction": {
+    "line": "轻松的黑色手绘线条，粗细不稳定，像马克笔/钢笔速写，边缘保留手抖和未闭合感",
+    "color": "透明水彩和平涂混合，粉红、橙红、草绿、天蓝、土黄、浅紫、灰蓝为主；可有一个小块彩色背景，但四周仍是白纸留白",
+    "characters": "可爱动物、奇怪小怪物、拟人化物件、笨拙普通人、小女孩、小猫、小鸭、刺猬、鱼、恐龙、杯子、锅、书、植物等；不使用固定角色身份",
+    "scenes": "盆栽、杯子、鱼缸、公交、饭桌、床、书本、云、苹果、怪物、恐龙、动物对话、手和小物件等小型隐喻场景",
+    "composition": "主体通常较小，位于上方或中部；有时放在淡色方形水彩色块中；caption 区在下方居中，图片和文字之间留出明显白纸空间",
+    "caption_lettering": "黑色手写毛笔字/马克笔字，字形圆润但不工整，笔画粗细不均，墨色浓，边缘略糙；不是宋体、黑体、楷体、PingFang、字幕字或规则数字字体"
+  },
+  "style_prompt": "Complete original Chinese WeChat whimsical watercolor doodle comic source image as one bitmap. The upper or middle area is a small playful hand-drawn watercolor doodle scene on clean white paper: cute animals, odd tiny monsters, personified objects, simple ordinary people, plants, cups, books, fish, ducks, cats, hedgehogs, dinosaurs, clouds, food, buses, beds, or tiny metaphor scenes. Use loose black hand-drawn ink or marker lines, slightly uneven strokes, simple rounded forms, transparent watercolor washes mixed with flat color, small colored square wash background only when useful, visible paper texture, sparse composition, lots of white margin, whimsical gentle humor, public-account hand-painted cartoon quality, not polished anime. The lower area must contain the exact Chinese caption lines wrapped in double quotation marks in the scene prompt, rendered as large black handwritten Chinese brush or marker lettering: dense black ink, uneven thick-and-thin strokes, rough dry-brush edges, organic imperfect character shapes, rounded hand spacing, centered 2-5 lines, generous line gap. Render only the quoted Chinese caption text, copy it exactly without rewriting, shortening, replacing, adding, or dropping characters. Do not use Songti, Heiti, Kaiti, PingFang, typed subtitle text, clean vector calligraphy, digital font, or printed typography. No unquoted text, no extra Chinese characters, no English letters, no random numbers, no labels, no UI text, no QR code, no watermark, no logo, no signature, no account name, no copied author identity, no copied fixed character, no realistic adult-pressure scene, no dense background, no photorealism, no glossy anime, no 3D, no malformed hands, no distorted faces, no duplicate heads, no extra limbs, no missing limbs",
+  "quality_gate": [
+    "第一眼必须是白底、红编号可外置、小幅奇想水彩涂鸦、下方黑色手写中文 caption 的公众号源图风格",
+    "每张源图必须同时包含小幅插画和下方黑色手写中文 caption，不再由布局脚本后期拼 caption",
+    "图片里只能出现 panel prompt 中用英文双引号包住的 caption 文案，必须逐字准确、清晰、居中",
+    "caption 字形要像黑色手写毛笔字或马克笔字，圆润但不工整，不能像系统字体、宋体、黑体、楷体、字幕字或规则矢量字",
+    "不得出现二维码、水印、署名、账号名、logo、英文、随机数字、乱码或任何未被引号包住的额外文字",
+    "不要复制参考图中的固定文案、二维码、署名、作者身份和固定角色",
+    "主题应是奇想哲思、可爱动物、拟人化物件或轻幽默金句；不要漂成纯自然治愈风景，也不要漂成成人现实压力小品",
+    "主体要小、轻、空，留白要多；如果画面太满、太写实、太成人职场、太厚涂，通常需要重生成",
+    "动物、怪物和人物可以夸张，但必须完整可读，不能多头、坏手、缺肢、五官漂浮或多人融合"
+  ],
+  "prompt_recipe": {
+    "generation_mode": "prompt-only after training; no reference screenshot for normal production",
+    "source_image_rule": "Generate one complete source image as one bitmap, not illustration-only art and not post-composited text.",
+    "layout_rule": "Vertical white paper canvas; upper or middle area is a small whimsical watercolor doodle scene; lower area is a centered 2-5 line handwritten Chinese caption; keep the illustration small and leave clear white space around both parts.",
+    "caption_rule": "Use a Text to render exactly block. Put every caption line in English double quotation marks. Render only those quoted Chinese strings and copy them exactly.",
+    "typography_rule": "Large black handwritten Chinese brush or marker lettering, dense ink, uneven thick-and-thin strokes, rough dry-brush edges, organic imperfect rounded character shapes, centered lines, generous line gap.",
+    "negative_rule": "No QR code, watermark, logo, signature, account name, copied author identity, English letters, random numbers, UI text, labels, or any unquoted text.",
+    "example_panel_prompt": "Upper illustration: a small round cat sitting beside a potted plant, both looking at one new green leaf, loose black-line watercolor doodle, white paper margin. Text to render exactly: \"长大以后\" \"才知道\" \"安静也可以\" \"很热闹\". Lower caption must be centered black handwritten brush lettering."
+  },
+  "validated_test": {
+    "mode": "Agent imagegen, prompt-only, no reference image input; final long-image test generated at output/comics/越长大越想把日子过轻一点/越长大越想把日子过轻一点-小林风格3测试长图.png",
+    "result": "Produced an 8-panel vertical long image with white background, red numbered badges, small cute watercolor doodles, and lower black handwritten Chinese captions. No QR code, signature, account name, or watermark appeared. Caption accuracy was acceptable after regenerating a failed alarm-clock panel.",
+    "known_drift_and_tuning": [
+      "If the result becomes too realistic or adult-pressure oriented, add cute animals, personified objects, odd tiny monsters, colored wash square, and lighter whimsical metaphor.",
+      "If the result becomes pure healing landscape, add a funny object, tiny creature, or absurd visual twist.",
+      "If the source image becomes too large or crowded, ask for smaller illustration mass, more white paper margin, and fewer background details.",
+      "The first alarm-clock panel drifted by rewriting the caption. Shortening the caption to 2-4 simpler characters per line improved accuracy.",
+      "A regenerated alarm-clock panel added a sleep Z symbol. Explicitly forbid Z, zzz, sleep letters, speech bubbles, sound effects, labels, and symbols when the scene implies sleeping.",
+      "The accepted long-image test still looked more uniform and larger in illustration mass than the reference screenshots. For closer matching, repeat smaller subject, more white paper margin, looser doodle texture, and occasional colored square backgrounds.",
+      "If any Chinese character is wrong, missing, replaced, or garbled, regenerate the panel before stitching."
+    ]
+  }
+}

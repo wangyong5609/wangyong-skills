@@ -1,0 +1,90 @@
+{
+  "name": "小林诗意治愈",
+  "aliases": [
+    "小林诗意治愈",
+    "小林水彩治愈",
+    "小林风格",
+    "小林风格1",
+    "小林风格 1",
+    "小林漫画1",
+    "小林漫画 1",
+    "小林治愈",
+    "xiaolin-healing",
+    "xiaolin-style",
+    "风格四"
+  ],
+  "description": "适合温柔治愈、人生感悟、情绪安抚、自然隐喻类公众号漫画长图。每张源图同时包含水彩场景和手写中文 caption。",
+  "text_policy": "model-rendered",
+  "generation_mode": "prompt-only after training; panel prompts must include quoted caption text and generate illustration plus caption as one bitmap; do not attach the original reference screenshot for normal generation",
+  "production_workflow": {
+    "requires_topic": true,
+    "requires_copy_confirmation": true,
+    "requires_prompt_confirmation": true,
+    "requires_panel_acceptance": true,
+    "default_order": "approved_beat_order",
+    "layout_after_all_panels_accepted": true
+  },
+  "layout": {
+    "canvas_width": 600,
+    "background": "#ffffff",
+    "rhythm": "标题可选 -> 红色编号小方牌 -> 完整源图（上方水彩插画 + 下方黑色手写中文 caption）-> 留白，重复 3-6 个分镜",
+    "preferred_blocks": [
+      "badge",
+      "image",
+      "spacer"
+    ],
+    "template": "templates/article-template-xiaolin-style.json"
+  },
+  "copy": {
+    "tone": "温柔、笃定、诗性、少解释、少概念",
+    "line_length": "每行 8-14 个汉字，通常 2-4 行一组",
+    "structure": "自然现象或安静场景 -> 人生结论 -> 温柔祝福",
+    "punctuation": "尽量不使用句号和逗号；需要提问时才保留问号",
+    "prompt_rule": "每一行 caption 都必须在 panel prompt 中用英文双引号包裹；生成图里只能出现这些被引号包住的文字"
+  },
+  "art_direction": {
+    "line": "松弛的黑色手绘线条，边缘不必完全封闭，保留纸面手作感",
+    "color": "透明水彩，绿色、粉色、浅蓝、土黄、暖棕为主，颜色轻、干净、带水痕",
+    "characters": "小比例人物或远景人物，动作简单，表情克制，不使用固定角色身份",
+    "scenes": "气球、草地、树、山、田野、小屋、窗边、雨后、夜灯、花、落叶等自然或日常隐喻",
+    "composition": "大量白底留白，主体居中，上方是轻盈水彩场景，下方留出居中的 2-4 行黑色手写中文 caption，细节少但有情绪",
+    "caption_lettering": "黑色手写毛笔字/墨笔字效果，墨色浓黑，笔画粗细不均，边缘略毛糙，起收笔自然，字形略有手写歪斜但整体居中稳定；不是宋体、黑体、楷体、PingFang、字幕字或规则数字字体"
+  },
+  "style_prompt": "Complete original Chinese WeChat watercolor comic source image as one bitmap. The upper area is a quiet healing watercolor illustration on a clean white paper background, using transparent watercolor washes, loose black hand-drawn ink lines, soft imperfect watercolor edges, visible paper texture, restrained colors such as fresh green, pink, pale blue, ochre, warm brown and soft gray, simple natural metaphor scene, centered subject, gentle minimal composition, small human figures only when useful, simple posture, calm emotion, finished hand-painted public-account illustration quality. The lower area must contain the exact Chinese caption lines wrapped in double quotation marks in the scene prompt, rendered as large black handwritten Chinese brush lettering: dense black ink, uneven thick-and-thin strokes, rough dry-brush edges, organic imperfect character shapes, slightly relaxed hand spacing, centered 2-4 lines, generous line gap. Render only the quoted Chinese caption text, copy it exactly without rewriting, shortening, replacing, adding, or dropping characters. Do not use Songti, Heiti, Kaiti, PingFang, typed subtitle text, clean vector calligraphy, digital font, or printed typography. No unquoted text, no extra Chinese characters, no English letters, no random numbers, no labels, no UI text, no QR code, no watermark, no logo, no signature, no account name, no copied character identity, no photorealism, no glossy anime, no 3D, no dense background, no harsh contrast, no messy dirty sketch, no malformed hands, no distorted faces, no duplicate heads, no extra limbs, no missing limbs",
+  "quality_gate": [
+    "第一眼必须是白底、留白、水彩、安静治愈的公众号源图风格",
+    "每张源图必须同时包含上方水彩插画和下方黑色手写中文 caption，不再由布局脚本后期拼 caption",
+    "图片里只能出现 panel prompt 中用英文双引号包住的 caption 文案，必须逐字准确、清晰、居中",
+    "caption 字形要像黑色手写毛笔字：粗细不均、墨色浓、边缘略毛糙，不能像系统字体、宋体、黑体、楷体、字幕字或规则矢量字",
+    "不得出现二维码、水印、署名、账号名、logo、英文、随机数字、乱码或任何未被引号包住的额外文字",
+    "不要复制参考图中的固定文案、二维码、署名和作者身份",
+    "每个分镜只表达一个隐喻或情绪，不做复杂叙事",
+    "人物只作为小比例情绪载体，不能抢过自然场景",
+    "水彩边缘要轻、干净、有呼吸感，不能变成厚涂、写实、日漫或 3D"
+  ],
+  "prompt_recipe": {
+    "generation_mode": "prompt-only after training; no reference screenshot for normal production",
+    "source_image_rule": "Generate one complete source image as one bitmap, not illustration-only art and not post-composited text.",
+    "layout_rule": "Vertical white paper canvas; upper area is a soft watercolor illustration; lower area is a centered 2-4 line handwritten Chinese caption; leave clear white space between illustration and caption.",
+    "caption_rule": "Use a Text to render exactly block. Put every caption line in English double quotation marks. Render only those quoted Chinese strings and copy them exactly.",
+    "typography_rule": "Large black handwritten Chinese brush lettering, dense ink, uneven thick-and-thin strokes, rough dry-brush edges, organic imperfect character shapes, centered lines, generous line gap.",
+    "negative_rule": "No QR code, watermark, logo, signature, account name, copied author identity, English letters, random numbers, UI text, labels, or any unquoted text.",
+    "example_panel_prompt": "Upper illustration: a lush green watercolor tree, a tiny person sitting quietly by the trunk holding a small flower or leaf. Text to render exactly: \"人这一生\" \"自私很容易\" \"爱自己却很难\". Lower caption must be centered black handwritten brush lettering."
+  },
+  "validated_test": {
+    "mode": "Agent imagegen, prompt-only, no reference image input",
+    "tested_scene": "watercolor tree with a tiny seated person holding a small flower or leaf; three quoted caption lines in the lower area",
+    "result": "Produced one complete source image with watercolor illustration and the lower handwritten caption in the same bitmap. The three quoted Chinese lines were legible and no QR code, signature, account name, watermark, or extra text appeared.",
+    "accepted_traits": [
+      "single bitmap containing both illustration and caption",
+      "large black handwritten brush-like Chinese lettering",
+      "soft green watercolor tree scene on white paper",
+      "no reference image required for normal production"
+    ],
+    "known_drift_and_tuning": [
+      "If the scene becomes too polished or full, ask for smaller watercolor mass, more white margins, looser uneven washes, and rougher hand-painted paper texture.",
+      "If the caption becomes typed or too clean, repeat that it is not Songti, Heiti, Kaiti, PingFang, subtitle text, digital calligraphy, or vector typography.",
+      "If any Chinese character is wrong, missing, replaced, or garbled, regenerate the panel before stitching."
+    ]
+  }
+}

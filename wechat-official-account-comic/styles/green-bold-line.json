@@ -1,0 +1,50 @@
+{
+  "name": "绿底粗线漫画",
+  "aliases": [
+    "绿底粗线漫画",
+    "绿底职场对比",
+    "绿底粗线",
+    "green-bold-line"
+  ],
+  "description": "适合职场对比、上班第一年和第五年、内卷边界感等公众号漫画长图。漫画图片内的标题、对白、气泡、聊天框和重点文字都由 AI 直接生成。",
+  "text_policy": "model-rendered",
+  "generation_mode": "prompt-only from this style profile; all in-panel Chinese text must be quoted in the prompt and rendered by the image model",
+  "layout": {
+    "canvas_width": 691,
+    "background": "#88a846",
+    "rhythm": "绿色纹理背景 -> 白字外部引导或 section_label -> 黑色圆角 framed_image 堆叠；panel 内标题、对白和气泡文字已在图片中",
+    "preferred_blocks": [
+      "paragraph",
+      "section_label",
+      "framed_image"
+    ],
+    "template": "templates/article-template-green-bold-line.json"
+  },
+  "copy": {
+    "tone": "直接、职场观察、对比鲜明、轻吐槽",
+    "line_length": "panel 内文字必须短，标题和对白都用双引号逐条列出",
+    "prompt_rule": "所有希望出现在漫画图片内的中文必须在 panel prompt 中用英文双引号包裹；布局脚本不再后期添加气泡或 header 文字"
+  },
+  "art_direction": {
+    "line": "粗黑手绘线条，线条略有抖动和手工感",
+    "color": "草绿色、天空蓝、芥末黄、暖棕、橙色、灰紫和米白，平涂色块加轻微纸纹",
+    "characters": "年轻中国女性员工，浅棕色中长发或齐肩发，可穿绿色上衣、白色条纹袖、棕色外套、蓝色长裤和工牌",
+    "scenes": "办公室、工位、电脑、文件、咖啡杯、会议室、夜晚窗景、夕阳窗景、茶水间和楼道",
+    "composition": "竖向公众号漫画分镜，前景人物动作明确，背景细节丰富但不抢戏"
+  },
+  "style_prompt": "参考目标是微信公众号长截图风格的中文职场对比漫画小图：粗黑手绘线条，线条略有抖动和手工感，平涂色块叠加轻微纸纹颗粒，不是精致日漫，不是写实插画。画面要像手机长图里的成稿漫画，人物比例简化但完整，五官朴素夸张，表情直接可读。常用配色为草绿色、天空蓝、芥末黄、暖棕、橙色、灰紫和米白，饱和但不荧光，整体适合放在绿色纹理文章背景上。场景以现代中国职场为主：开放办公室、工位、电脑、键盘、文件、咖啡杯、工牌、会议室、夜晚窗景、夕阳窗景、茶水间、楼道。主角保持为年轻中国女性员工，浅棕色中长发或齐肩发，圆脸，白色皮肤底色，绿色背心或绿色上衣，可搭配白色条纹袖、棕色外套、蓝色长裤和工牌。构图为竖向公众号漫画分镜，前景人物大、动作明确，背景细节丰富但不抢戏。面板顶部要有黑色圆角标题条时，标题条里的文字必须来自场景提示中的引号。所有需要出现在图里的中文，包括标题、对白、旁白、手机消息、时间戳、拟声词和强调词，都必须由即梦直接画在图里。引号里的中文文字优先级最高，必须逐字照抄，不要改写、缩短、替换同义词或漏字；长句自动分行但保持原文顺序。只渲染场景提示里用引号包住的文字，必须清晰、粗黑或白字黑描边，放进对应的对白气泡、标题条、聊天框或画面指定位置。不要自己编任何额外文字；没有被引号包住的词语一律只当作画面说明，不要写进图里。对白气泡要白底黑边，尾巴指向说话人；聊天框要像参考图里的白色矩形消息框；标题条要黑底白字。文字要大而清楚，适合手机阅读。人物是成年职场人，不要儿童化萌系，不要过度圆润可爱；保留参考图那种粗糙手绘公众号漫画感，黑线更粗，阴影更少，颗粒更明显。不要英文，不要拼音，不要随机标签，不要无意义乱码，不要界面小字，不要海报墙字，不要水印，不要logo或署名。不要绿色发光边框，不要过度光滑的动漫脸，不要电影写实，不要厚涂，不要水彩柔边，不要3D感，不要草稿低清，不要畸形肢体，不要多头，不要坏手。",
+  "quality_gate": [
+    "panel 图片里的标题、对白、气泡、聊天框、时间戳和强调词必须由 AI 直接生成，布局脚本不得后期添加 speech_bubbles 或 framed_image header",
+    "所有入图中文都必须来自 prompt 中的英文双引号，逐字准确、清晰、可手机阅读",
+    "不得出现未被引号包住的额外文字、英文、拼音、随机标签、乱码、水印、logo、署名或账号名",
+    "必须保持粗黑手绘线、绿色公众号职场漫画质感，不能变成写实、精致日漫、3D、柔软水彩或低清草稿",
+    "人物可以夸张但必须完整可读，不能多头、坏手、缺肢、畸形脸或多人融合"
+  ],
+  "prompt_recipe": {
+    "generation_mode": "prompt-only after the style profile exists",
+    "source_image_rule": "Generate finished in-panel comic images. The layout script only stacks images and outer article labels.",
+    "caption_rule": "Put every title, dialogue, phone message, time tag, sound effect, or emphasized in-panel string in English double quotation marks and specify its placement.",
+    "negative_rule": "No post-layout bubbles or headers; no extra unquoted text, English, pinyin, random labels, UI text, wall text, watermarks, logos, signatures, or garbled characters.",
+    "example_panel_prompt": "Panel top black title bar text: \"上班第一年\". A young office worker sits at a desk at night. Speech bubble text: \"大家都没走\" \"我怎么敢先走？\". Render only the quoted Chinese strings."
+  }
+}

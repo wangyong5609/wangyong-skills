@@ -15,53 +15,8 @@ DEFAULT_MODEL = "doubao-seedream-4-5-251128"
 DEFAULT_ENV_FILES = (
     Path.cwd() / ".env",
 )
-STYLE_PROMPTS = {
-    "风格一": (
-        "WORDLESS IMAGE ONLY. standalone warm children's book style illustration, finished polished illustration quality, "
-        "clean black ink linework, restrained warm colors, soft white or pastel background, "
-        "clear central subject, gentle expressive characters, anatomically coherent complete human figures, one head per person, "
-        "clear face neck torso arms hands legs feet, natural joints, natural posture, correct scale relationships, "
-        "emotionally readable expressions, simple uncluttered mobile-readable composition, purely visual illustration, "
-        "the image must contain zero writing, zero typography, zero symbols, zero readable marks, "
-        "no Chinese characters, no English letters, no numbers, no captions, no speech bubbles, no comic sound effects, "
-        "no title text, no handwriting, no labels, no poster text, no UI text, "
-        "all screens, books, clocks, papers, signs, whiteboards, posters, product surfaces, walls, backgrounds must be blank or abstract, "
-        "no watermark, no logo, "
-        "no rough storyboard, no messy pencil draft, no dirty gray shading, no distorted faces, no duplicate heads, "
-        "no floating facial parts, no detached hair, no extra limbs, no missing limbs, no fused bodies, no broken hands, "
-        "no backward joints, no stick figures, no bean bodies, no blob people, no pictogram icons"
-    ),
-    "风格二": (
-        "WORDLESS IMAGE ONLY. soft psychological WeChat longform comic illustration panel, portrait-oriented scene, "
-        "clean but not glossy hand-drawn manga line art, slightly thicker black outlines, simple elegant facial features, restrained adult proportions, "
-        "flat warm colors with light watercolor wash, white glow fade at top and bottom edges, airy white-space friendly composition, "
-        "when the scene needs people, use these character types: a calm young adult Chinese female psychological consultant with straight black shoulder-length hair, mustard cardigan or light blazer over cream turtleneck; "
-        "or a young adult Chinese female client with long black hair, white shirt and muted green vest or green dress. "
-        "For metaphor scenes, simple faceless cream-colored mascot figures, paths, flowers, phones, cups, windows, and symbolic objects are allowed; do not force the recurring women into every metaphor panel. "
-        "warm sunlight, cozy counseling room, yellow sofa, plants, books, desk, bed, cup, vase, bright window, gentle outdoor metaphors, "
-        "soft golden-beige palette, quiet relationship-healing mood, emotional but restrained expressions, finished public-account comic quality, "
-        "the generated image must contain zero written language and zero typography; all blue narration bars and all article text will be added later by the layout script, never draw them inside the panel; "
-        "no glossy high-detail anime rendering, no cinematic photorealism, no over-rendered skin, no childlike cute style, no harsh contrast, no grim manga, no rough sketch, no dirty gray shading, no logo, no watermark, "
-        "no Chinese characters, no English letters, no numbers, no captions, no labels, no UI text, no blue text bars, no colored text strips, no speech-bubble text; "
-        "speech bubbles or thought bubbles may appear only when requested, and their interiors must remain blank unless final rendered text is explicitly required"
-    ),
-    "风格三": (
-        "参考目标是微信公众号长截图风格的中文职场对比漫画小图：粗黑手绘线条，线条略有抖动和手工感，平涂色块叠加轻微纸纹颗粒，"
-        "不是精致日漫，不是写实插画。画面要像手机长图里的成稿漫画，人物比例简化但完整，五官朴素夸张，表情直接可读。"
-        "常用配色为草绿色、天空蓝、芥末黄、暖棕、橙色、灰紫和米白，饱和但不荧光，整体适合放在绿色纹理文章背景上。"
-        "场景以现代中国职场为主：开放办公室、工位、电脑、键盘、文件、咖啡杯、工牌、会议室、夜晚窗景、夕阳窗景、茶水间、楼道。"
-        "主角保持为年轻中国女性员工，浅棕色中长发或齐肩发，圆脸，白色皮肤底色，绿色背心或绿色上衣，可搭配白色条纹袖、棕色外套、蓝色长裤和工牌。"
-        "构图为竖向公众号漫画分镜，前景人物大、动作明确，背景细节丰富但不抢戏。面板顶部要有黑色圆角标题条时，标题条里的文字必须来自场景提示中的引号。"
-        "所有需要出现在图里的中文，包括标题、对白、旁白、手机消息、时间戳、拟声词和强调词，都必须由即梦直接画在图里。"
-        "引号里的中文文字优先级最高，必须逐字照抄，不要改写、缩短、替换同义词或漏字；长句自动分行但保持原文顺序。"
-        "只渲染场景提示里用引号包住的文字，必须清晰、粗黑或白字黑描边，放进对应的对白气泡、标题条、聊天框或画面指定位置。"
-        "不要自己编任何额外文字；没有被引号包住的词语一律只当作画面说明，不要写进图里。"
-        "对白气泡要白底黑边，尾巴指向说话人；聊天框要像参考图里的白色矩形消息框；标题条要黑底白字。文字要大而清楚，适合手机阅读。"
-        "人物是成年职场人，不要儿童化萌系，不要过度圆润可爱；保留参考图那种粗糙手绘公众号漫画感，黑线更粗，阴影更少，颗粒更明显。"
-        "不要英文，不要拼音，不要随机标签，不要无意义乱码，不要界面小字，不要海报墙字，不要水印，不要logo或署名。"
-        "不要绿色发光边框，不要内置外框，不要过度光滑的动漫脸，不要电影写实，不要厚涂，不要水彩柔边，不要3D感，不要草稿低清，不要畸形肢体，不要多头，不要坏手。"
-    ),
-}
+DEFAULT_STYLES_DIR = Path(__file__).resolve().parents[1] / "styles"
+MODEL_RENDERED_TEXT_POLICIES = {"model-rendered", "quoted-text", "in-panel-text"}
 QUOTE_TRANSLATION = str.maketrans({
     '"': "",
     "'": "",
@@ -156,18 +111,112 @@ def load_prompts(path):
     return [line.strip() for line in raw.splitlines() if line.strip()]
 
 
+def load_style_profile(path):
+    path = Path(path)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise ValueError(f"Style profile not found: {path}") from exc
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Style profile is not valid JSON: {path}: {exc}") from exc
+    if not isinstance(data, dict):
+        raise ValueError(f"Style profile must be a JSON object: {path}")
+    style_prompt = data.get("style_prompt") or data.get("prompt")
+    if not style_prompt:
+        raise ValueError(f"Style profile must include style_prompt or prompt: {path}")
+    text_policy = str(data.get("text_policy") or "wordless").strip() or "wordless"
+    name = str(data.get("name") or data.get("style") or path.stem).strip() or path.stem
+    aliases = data.get("aliases") or []
+    if isinstance(aliases, str):
+        aliases = [aliases]
+    return {
+        "name": name,
+        "aliases": [str(alias).strip() for alias in aliases if str(alias).strip()],
+        "style_prompt": str(style_prompt).strip(),
+        "text_policy": text_policy,
+        "default": bool(data.get("default", False)),
+        "source": str(path),
+    }
+
+
+def iter_style_profiles(styles_dir):
+    styles_dir = Path(styles_dir).expanduser()
+    if not styles_dir.exists():
+        return
+    for path in sorted(p for p in styles_dir.glob("*.json") if p.is_file()):
+        try:
+            yield path, load_style_profile(path)
+        except ValueError:
+            continue
+
+
+def resolve_default_style_profile(styles_dir):
+    defaults = []
+    for path, profile in iter_style_profiles(styles_dir):
+        if profile.get("default"):
+            defaults.append((path, profile))
+    if not defaults:
+        raise ValueError(
+            f"No default style profile found in {Path(styles_dir).expanduser()}. "
+            'Mark exactly one profile with "default": true, pass --style, or pass --style-profile.'
+        )
+    if len(defaults) > 1:
+        names = ", ".join(str(path.name) for path, _ in defaults)
+        raise ValueError(f"Multiple default style profiles found: {names}. Mark exactly one profile as default.")
+    return defaults[0][1]
+
+
+def resolve_style_settings(style, style_profile, styles_dir):
+    if style_profile:
+        profile = load_style_profile(Path(style_profile).expanduser())
+        return profile["name"], profile["style_prompt"], profile["text_policy"], profile["source"]
+
+    styles_dir = Path(styles_dir).expanduser()
+    style = str(style or "").strip()
+    if not style:
+        profile = resolve_default_style_profile(styles_dir)
+        return profile["name"], profile["style_prompt"], profile["text_policy"], profile["source"]
+
+    candidate = styles_dir / f"{style}.json"
+    if candidate.exists():
+        profile = load_style_profile(candidate)
+        return profile["name"], profile["style_prompt"], profile["text_policy"], profile["source"]
+
+    available_styles = []
+    for path, profile in iter_style_profiles(styles_dir):
+        available_styles.append(path.stem)
+        aliases = set(profile.get("aliases", []))
+        aliases.add(profile["name"])
+        if style in aliases:
+            return profile["name"], profile["style_prompt"], profile["text_policy"], profile["source"]
+    available = available_styles
+    raise ValueError(
+        f"Unknown style: {style}. Use one of: {', '.join(available)}; "
+        "or pass --style-profile /path/to/style.json"
+    )
+
+
+def uses_model_rendered_text(text_policy):
+    normalized = str(text_policy or "").strip().lower().replace("_", "-")
+    return normalized in MODEL_RENDERED_TEXT_POLICIES
+
+
 def sanitize_prompt(prompt, preserve_quotes=False):
     if preserve_quotes:
         return prompt.strip()
     return prompt.translate(QUOTE_TRANSLATION).strip()
 
 
-def build_full_prompt(style, prompt, style_prompt):
-    if style == "风格三":
+def build_full_prompt(style, prompt, style_prompt, text_policy="wordless"):
+    if uses_model_rendered_text(text_policy):
+        intro = (
+            "根据风格 profile 生成一张完整的中文公众号漫画图。"
+            "图中需要出现的标题、对白、旁白、标签、消息、拟声词或手写 caption 都由图像模型直接渲染。"
+            "只有场景提示中被引号包住的文字可以写进画面；必须遵循 profile 里的构图、文字位置和字形规则。"
+            "不要添加任何未被引号包住的额外文字，不要英文，不要乱码。"
+        )
         return (
-            "生成一张完整的中文职场公众号漫画小图，图中所有标题、对白、旁白、手机消息和拟声词都由你直接渲染。"
-            "只有场景提示中被引号包住的文字可以写进画面，必须放在对应气泡、标题条、聊天框或指定位置；"
-            "不要添加任何未被引号包住的额外文字，不要英文，不要乱码。\n\n"
+            f"{intro}\n\n"
             f"场景：{prompt}\n\n风格和限制：{style_prompt}"
         )
     return (
@@ -273,7 +322,9 @@ def main():
     )
     parser.add_argument("--prompts", required=True, help="JSON or text file containing panel prompts")
     parser.add_argument("--out-dir", required=True, help="Output directory for panel PNG files")
-    parser.add_argument("--style", default="风格一", choices=sorted(STYLE_PROMPTS), help="Style prompt to append")
+    parser.add_argument("--style", default="", help='Style name, alias, or JSON profile stem in --styles-dir; omit to use the profile marked "default": true')
+    parser.add_argument("--style-profile", default="", help="Explicit JSON style profile to use")
+    parser.add_argument("--styles-dir", default=str(DEFAULT_STYLES_DIR), help="Directory containing reusable JSON style profiles")
     parser.add_argument("--model", default=os.environ.get("ARK_IMAGE_MODEL", DEFAULT_MODEL))
     parser.add_argument("--api-url", default=os.environ.get("ARK_API_URL", DEFAULT_API_URL))
     parser.add_argument("--api-key-env", default="DOUBAO_API_KEY", help="Environment variable containing Ark/Doubao API key")
@@ -302,13 +353,25 @@ def main():
         print("No prompts found.", file=sys.stderr)
         return 2
 
+    try:
+        style_name, style_prompt, text_policy, style_source = resolve_style_settings(
+            args.style,
+            args.style_profile,
+            args.styles_dir,
+        )
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    style_prompt = STYLE_PROMPTS[args.style]
     manifest = {
         "api_url": args.api_url,
         "model": args.model,
-        "style": args.style,
+        "style": style_name,
+        "requested_style": args.style,
+        "style_source": style_source,
+        "text_policy": text_policy,
         "size": args.size,
         "response_format": args.response_format,
         "watermark": args.watermark,
@@ -317,8 +380,9 @@ def main():
     }
 
     for index, prompt in enumerate(prompts, start=1):
-        clean_prompt = sanitize_prompt(prompt, preserve_quotes=args.style == "风格三")
-        full_prompt = build_full_prompt(args.style, clean_prompt, style_prompt)
+        render_text_in_model = uses_model_rendered_text(text_policy)
+        clean_prompt = sanitize_prompt(prompt, preserve_quotes=render_text_in_model)
+        full_prompt = build_full_prompt(style_name, clean_prompt, style_prompt, text_policy)
         out_path = out_dir / f"panel-{index:02d}.png"
         print(f"[{index}/{len(prompts)}] generating {out_path}", flush=True)
         try:

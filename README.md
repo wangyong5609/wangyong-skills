@@ -9,7 +9,7 @@
 | Skill | 适合做什么 | 是否需要 API |
 | --- | --- | --- |
 | `wechat-article-collector` | 采集微信公众号历史文章，导出 Markdown、账号概览和 CSV 数据 | 需要大加啦/极致了 API key |
-| `wechat-comic-longform` | 把主题、草稿或文章结构做成微信公众号漫画长图 | 拼接只需本地 Python；批量生图需要豆包/Seedream API |
+| `wechat-official-account-comic` | 生成多风格微信公众号漫画长图，支持沉淀和测试新增漫画风格 profile | 拼接只需本地 Python；批量生图需要豆包/Seedream API |
 | `macos-app-icon` | 生成、优化、预览和打包 macOS 应用图标 `.icns` | 通常不需要 API，可能需要图片生成能力 |
 | `life-interview-planner` | 通过结构化访谈挖掘人生方向、优势假设、价值观和低风险实验 | 不需要 API |
 | `ai-creator-cover` | 通过访谈、方案卡和中文提示词设计 AI 自媒体视频封面 | 需要 Agent 自带图片生成能力 |
@@ -21,7 +21,7 @@
 | Skill | 示例 |
 | --- | --- |
 | `wechat-article-collector` | [查看采集效果](./docs/examples/wechat-article-collector.png) |
-| `wechat-comic-longform` | [风格一](./docs/examples/wechat-comic-style-1.png) / [风格二](./docs/examples/wechat-comic-style-2.png) / [风格三](./docs/examples/wechat-comic-style-3.png) |
+| `wechat-official-account-comic` | [暖白手绘漫画](./docs/examples/wechat-comic-warm-white-handdrawn.png) / [蓝栏柔彩漫画](./docs/examples/wechat-comic-blue-bar-soft-color.png) / [绿底粗线漫画](./docs/examples/wechat-comic-green-bold-line.png) |
 | `ai-creator-cover` | [查看全部封面示例](./ai-creator-cover/assets/examples/showcase/) |
 
 ### AI 自媒体封面示例
@@ -59,12 +59,13 @@ wangyong-skills/
   wechat-article-collector/
     SKILL.md
     scripts/
-  wechat-comic-longform/
+  wechat-official-account-comic/
     SKILL.md
     requirements.txt
     docs/
     scripts/
     templates/
+    styles/
   macos-app-icon/
     SKILL.md
   life-interview-planner/
@@ -115,7 +116,7 @@ https://github.com/wangyong5609/wangyong-skills
 git clone https://github.com/wangyong5609/wangyong-skills.git
 cd wangyong-skills
 mkdir -p ~/.codex/skills
-cp -R wechat-article-collector wechat-comic-longform macos-app-icon life-interview-planner ai-creator-cover ~/.codex/skills/
+cp -R wechat-article-collector wechat-official-account-comic macos-app-icon life-interview-planner ai-creator-cover ~/.codex/skills/
 ```
 
 只安装一个 skill，例如 `ai-creator-cover`：
@@ -134,11 +135,11 @@ cp -R ai-creator-cover ~/.codex/skills/
 这个仓库不提供根目录统一依赖文件。每个有脚本依赖的 skill 自己维护 `requirements.txt`，按需安装即可：
 
 ```bash
-python3 -m pip install -r wechat-comic-longform/requirements.txt
+python3 -m pip install -r wechat-official-account-comic/requirements.txt
 python3 -m pip install -r ai-creator-cover/requirements.txt
 ```
 
-`wechat-comic-longform/requirements.txt` 用于漫画长图拼接脚本。`ai-creator-cover/requirements.txt` 只用于研究辅助脚本 `download_covers.py`，日常封面设计不需要安装它。
+`wechat-official-account-comic/requirements.txt` 用于公众号漫画长图拼接脚本。`ai-creator-cover/requirements.txt` 只用于研究辅助脚本 `download_covers.py`，日常封面设计不需要安装它。
 
 `macos-app-icon` 如果需要本地处理图标，建议安装 ImageMagick：
 
@@ -201,7 +202,7 @@ python3 wechat-article-collector/scripts/collect_wechat_articles.py \
 对 Agent 说：
 
 ```text
-Use $wechat-comic-longform 把「为什么下午三点最容易困」做成风格一的公众号漫画长图。
+Use $wechat-official-account-comic 把「为什么下午三点最容易困」做成暖白手绘漫画的公众号漫画长图。
 ```
 
 如果你有豆包/Seedream API key，可以让 Agent 使用批量生图脚本。如果没有，也可以让 Agent 使用它自己可用的图片生成能力先生成 panels，再用本仓库脚本拼接长图。
@@ -209,10 +210,42 @@ Use $wechat-comic-longform 把「为什么下午三点最容易困」做成风�
 拼接脚本示例：
 
 ```bash
-python3 wechat-comic-longform/scripts/build_long_comic.py \
+python3 wechat-official-account-comic/scripts/build_long_comic.py \
   --spec output/comics/文章标题/article.json \
   --out output/comics/文章标题/文章标题-公众号漫画长图.png
 ```
+
+#### 公众号漫画风格库
+
+`wechat-official-account-comic` 用来沉淀和测试新增漫画风格，适合把可复用风格做成 profile，让使用者只选风格名就能生成长图。
+
+当前风格统一由 `wechat-official-account-comic/styles/*.json` 管理：
+
+| 风格名 | 适合主题 | 配置文件 |
+| --- | --- | --- |
+| `暖白手绘漫画` | 科普、生活解释、成长和情绪安抚；图片无字，正文由布局脚本渲染 | `wechat-official-account-comic/styles/warm-white-handdrawn.json` |
+| `蓝栏柔彩漫画` | 关系、心理、成长和生活选择；蓝色叙事栏和红色强调由布局脚本渲染 | `wechat-official-account-comic/styles/blue-bar-soft-color.json` |
+| `绿底粗线漫画` | 职场对比、内卷、边界感；panel 内标题、对白、气泡和聊天框文字由 AI 直接生成 | `wechat-official-account-comic/styles/green-bold-line.json` |
+| `小林诗意治愈` / `小林风格1` | 白底水彩治愈，自然隐喻、诗意短句 | `wechat-official-account-comic/styles/xiaolin-healing.json` |
+| `小林生活讽刺` / `小林风格2` | 白底水彩人物小品，成年人生活观察、家庭和职场压力、轻讽刺 punchline | `wechat-official-account-comic/styles/xiaolin-life-satire.json` |
+| `小林奇想涂鸦` / `小林风格3` | 小幅涂鸦、可爱动物、怪物、拟人化物件、脑洞哲思短句 | `wechat-official-account-comic/styles/xiaolin-whimsy-doodle.json` |
+
+小林系风格的正常生成方式是从已保存的 profile 做 prompt-only 生成，不需要每次附训练截图。除非是在重新训练或排查风格漂移，否则不要把参考截图传给生图模型。小林系源图本身应包含插画和手写中文 caption，拼接脚本只负责排列红色编号和完整图片块。
+
+公众号漫画拼接脚本示例：
+
+```bash
+python3 wechat-official-account-comic/scripts/build_long_comic.py \
+  --spec output/comics/文章标题/article.json \
+  --out output/comics/文章标题/文章标题-公众号漫画长图.png
+```
+
+验收时必须逐字检查图片里的 caption，并拒绝二维码、署名、账号名、参考图固定文案、乱码、额外文字或水印。本地验证样例包括：
+
+- `output/comics/成年人最累的是装作没事/成年人最累的是装作没事-小林风格2测试长图.png`，尺寸 `600x6859`。
+- `output/comics/越长大越想把日子过轻一点/越长大越想把日子过轻一点-小林风格3测试长图.png`，尺寸 `600x9479`。
+
+这些生成图片是本地验收产物，不应作为通用模板或账号素材提交到仓库。
 
 ### 3. 生成 macOS 应用图标
 
@@ -265,8 +298,8 @@ Use $ai-creator-cover 帮我设计一张 AI 自媒体视频封面。这期视频
 ```bash
 git status --short
 python3 -m py_compile wechat-article-collector/scripts/collect_wechat_articles.py
-python3 -m py_compile wechat-comic-longform/scripts/build_long_comic.py
-python3 -m py_compile wechat-comic-longform/scripts/generate_panels_seedream.py
+python3 -m py_compile wechat-official-account-comic/scripts/build_long_comic.py
+python3 -m py_compile wechat-official-account-comic/scripts/generate_panels_seedream.py
 python3 -m py_compile ai-creator-cover/scripts/download_covers.py
 ```
 
