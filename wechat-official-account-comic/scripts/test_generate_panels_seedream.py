@@ -1,6 +1,8 @@
 import importlib.util
+import os
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 SCRIPT_PATH = Path(__file__).with_name("generate_panels_seedream.py")
@@ -157,6 +159,68 @@ class PromptWrappingTest(unittest.TestCase):
         self.assertIn("whimsical watercolor doodle", style_prompt)
         self.assertEqual(text_policy, "model-rendered")
         self.assertTrue(style_source.endswith("xiaolin-whimsy-doodle.json"))
+
+
+class ImageProviderTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.module = load_module()
+
+    def test_default_provider_is_agnes(self):
+        config = self.module.resolve_provider_config("agnes", "", "", "")
+
+        self.assertEqual(config["provider"], "agnes")
+        self.assertEqual(config["api_url"], self.module.DEFAULT_AGNES_API_URL)
+        self.assertEqual(config["model"], self.module.DEFAULT_AGNES_MODEL)
+        self.assertEqual(config["api_key_envs"], ["AGNES_API_KEY", "GNES_API_KEY", "AGNESAI_API_KEY"])
+
+    def test_agnes_api_key_takes_priority_over_seedream_keys(self):
+        config = self.module.resolve_provider_config("agnes", "", "", "")
+
+        with patch.dict(os.environ, {"AGNES_API_KEY": "agnes-key", "DOUBAO_API_KEY": "doubao-key"}, clear=True):
+            api_key, api_key_env = self.module.resolve_api_key(config["api_key_envs"])
+
+        self.assertEqual(api_key, "agnes-key")
+        self.assertEqual(api_key_env, "AGNES_API_KEY")
+
+    def test_gnes_alias_is_accepted_for_agnes_api_key(self):
+        config = self.module.resolve_provider_config("gnes", "", "", "")
+
+        with patch.dict(os.environ, {"GNES_API_KEY": "gnes-key"}, clear=True):
+            api_key, api_key_env = self.module.resolve_api_key(config["api_key_envs"])
+
+        self.assertEqual(config["provider"], "agnes")
+        self.assertEqual(api_key, "gnes-key")
+        self.assertEqual(api_key_env, "GNES_API_KEY")
+
+    def test_agnes_payload_uses_extra_body_for_response_format(self):
+        payload = self.module.build_api_payload(
+            "agnes",
+            "agnes-image-2.0-flash",
+            "画一张公众号漫画分镜",
+            "1024x768",
+            "url",
+            False,
+        )
+
+        self.assertEqual(payload["model"], "agnes-image-2.0-flash")
+        self.assertEqual(payload["extra_body"]["response_format"], "url")
+        self.assertNotIn("response_format", payload)
+        self.assertNotIn("watermark", payload)
+
+    def test_seedream_payload_keeps_seedream_specific_fields(self):
+        payload = self.module.build_api_payload(
+            "seedream",
+            "doubao-seedream-4-5-251128",
+            "画一张公众号漫画分镜",
+            "2304x1728",
+            "b64_json",
+            True,
+        )
+
+        self.assertEqual(payload["response_format"], "b64_json")
+        self.assertTrue(payload["watermark"])
+        self.assertEqual(payload["sequential_image_generation"], "disabled")
 
 
 if __name__ == "__main__":

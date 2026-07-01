@@ -86,9 +86,9 @@ Every training or production test should leave reusable lessons in the skill, no
 - If a style requires model-rendered caption text, prefer 2-5 short lines. Long paragraphs increase garbling and make the source image feel unlike the reference.
 - If a new style is only validated by reference analysis, say so in `validated_test.mode`. After the first prompt-only image or final long-image test, update the validation note with what actually passed and what drifted.
 
-## Seedream Usage
+## API Usage
 
-Use a saved profile by style id:
+The batch script defaults to Agnes Image. Use a saved profile by style id:
 
 ```bash
 python3 wechat-official-account-comic/scripts/generate_panels_seedream.py \
@@ -105,5 +105,7 @@ python3 wechat-official-account-comic/scripts/generate_panels_seedream.py \
   --out-dir output/comics/文章标题/panels \
   --style-profile wechat-official-account-comic/styles/soft-workplace-healing.json
 ```
+
+Use `AGNES_API_KEY` for the default Agnes path. To use Volcengine Ark/Doubao Seedream instead, pass `--provider seedream` and provide `DOUBAO_API_KEY` or `ARK_API_KEY`.
 
 For `model-rendered` profiles, wrap every intended in-panel Chinese string in quotation marks in the panel prompt. If the style combines illustration and caption into one source image, quote each caption line and describe its placement and lettering style. The first smoke test must verify that the model produced one source image, copied the quoted Chinese accurately, and did not add QR codes, account names, signatures, watermarks, English, or unquoted text. For `wordless` profiles, keep all Chinese article text in `article.json` and let the layout script render it.

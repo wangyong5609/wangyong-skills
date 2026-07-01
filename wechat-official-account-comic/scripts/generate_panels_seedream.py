@@ -10,8 +10,15 @@ import urllib.request
 from pathlib import Path
 
 
-DEFAULT_API_URL = "https://ark.cn-beijing.volces.com/api/v3/images/generations"
-DEFAULT_MODEL = "doubao-seedream-4-5-251128"
+DEFAULT_PROVIDER = "agnes"
+DEFAULT_AGNES_API_URL = "https://apihub.agnes-ai.com/v1/images/generations"
+DEFAULT_AGNES_MODEL = "agnes-image-2.0-flash"
+DEFAULT_AGNES_SIZE = "1024x768"
+DEFAULT_SEEDREAM_API_URL = "https://ark.cn-beijing.volces.com/api/v3/images/generations"
+DEFAULT_SEEDREAM_MODEL = "doubao-seedream-4-5-251128"
+DEFAULT_SEEDREAM_SIZE = "2304x1728"
+DEFAULT_API_URL = DEFAULT_SEEDREAM_API_URL
+DEFAULT_MODEL = DEFAULT_SEEDREAM_MODEL
 DEFAULT_ENV_FILES = (
     Path.cwd() / ".env",
 )
@@ -41,11 +48,24 @@ BILLING_ERROR_KEYWORDS = (
     "insufficient balance",
     "balance",
     "quota",
+    "credit",
+    "credits",
+    "token plan",
     "欠费",
     "余额不足",
     "额度不足",
     "账户余额",
 )
+PROVIDER_ALIASES = {
+    "agnes": "agnes",
+    "agnes-ai": "agnes",
+    "gnes": "agnes",
+    "seedream": "seedream",
+    "doubao": "seedream",
+    "ark": "seedream",
+    "volcengine": "seedream",
+    "volcengine-ark": "seedream",
+}
 
 
 def parse_env_value(value):
@@ -86,11 +106,54 @@ def load_default_env_files():
         load_env_file(path)
 
 
-def resolve_api_key(primary_env):
-    candidates = [primary_env]
-    for env_name in ("DOUBAO_API_KEY", "ARK_API_KEY"):
-        if env_name not in candidates:
-            candidates.append(env_name)
+def normalize_provider(provider):
+    normalized = str(provider or DEFAULT_PROVIDER).strip().lower().replace("_", "-")
+    provider_name = PROVIDER_ALIASES.get(normalized)
+    if not provider_name:
+        supported = ", ".join(sorted(PROVIDER_ALIASES))
+        raise ValueError(f"Unknown image provider: {provider}. Use one of: {supported}")
+    return provider_name
+
+
+def unique_names(names):
+    seen = set()
+    result = []
+    for name in names:
+        name = str(name or "").strip()
+        if name and name not in seen:
+            result.append(name)
+            seen.add(name)
+    return result
+
+
+def resolve_provider_config(provider, model="", api_url="", api_key_env=""):
+    provider_name = normalize_provider(provider or os.environ.get("COMIC_IMAGE_PROVIDER") or DEFAULT_PROVIDER)
+    if provider_name == "agnes":
+        return {
+            "provider": "agnes",
+            "label": "Agnes Image 2.0 Flash",
+            "api_url": api_url or os.environ.get("AGNES_API_URL") or DEFAULT_AGNES_API_URL,
+            "model": model or os.environ.get("AGNES_IMAGE_MODEL") or DEFAULT_AGNES_MODEL,
+            "api_key_envs": unique_names([api_key_env, "AGNES_API_KEY", "GNES_API_KEY", "AGNESAI_API_KEY"]),
+            "default_size": DEFAULT_AGNES_SIZE,
+        }
+    if provider_name == "seedream":
+        return {
+            "provider": "seedream",
+            "label": "Volcengine Ark/Doubao Seedream",
+            "api_url": api_url or os.environ.get("ARK_API_URL") or DEFAULT_SEEDREAM_API_URL,
+            "model": model or os.environ.get("ARK_IMAGE_MODEL") or DEFAULT_SEEDREAM_MODEL,
+            "api_key_envs": unique_names([api_key_env, "DOUBAO_API_KEY", "ARK_API_KEY"]),
+            "default_size": DEFAULT_SEEDREAM_SIZE,
+        }
+    raise ValueError(f"Unsupported image provider: {provider}")
+
+
+def resolve_api_key(env_names):
+    if isinstance(env_names, str):
+        candidates = unique_names([env_names, "DOUBAO_API_KEY", "ARK_API_KEY"])
+    else:
+        candidates = unique_names(env_names)
     for env_name in candidates:
         value = os.environ.get(env_name)
         if value:
@@ -246,8 +309,9 @@ def is_billing_error(code, message):
     return code in BILLING_ERROR_CODES or any(keyword.lower() in text for keyword in BILLING_ERROR_KEYWORDS)
 
 
-def build_failure_guidance(code, message):
-    if is_billing_error(code, message):
+def build_failure_guidance(code, message, provider):
+    provider_name = normalize_provider(provider)
+    if provider_name == "seedream" and is_billing_error(code, message):
         return (
             "\n\n生成已停止：当前火山方舟/豆包账号无法继续调用 Seedream/即梦图片模型。"
             "\n检测到的原因：账号欠费、余额不足或可用额度不足。"
@@ -258,6 +322,22 @@ def build_failure_guidance(code, message):
             "\n4. 重新运行同一个 generate_panels_seedream.py 命令即可继续生成。"
             "\n\n不会自动改用本地矢量图、PIL 占位图或其他非 Seedream 图片生成方式，以免把 mockup 误当成最终效果。"
         )
+    if provider_name == "agnes" and is_billing_error(code, message):
+        return (
+            "\n\n生成已停止：当前 Agnes 账号无法继续调用 Agnes Image 图片模型。"
+            "\n检测到的原因可能是 API Key 对应账号额度、订阅或 Token Plan 不可用。"
+            "\n处理方式："
+            "\n1. 登录与当前 API Key 对应的 Agnes 账号：https://platform.agnes-ai.com/"
+            "\n2. 打开「账户 / 订阅 / Token Plan」或 API 密钥页面，确认账号状态和可用额度。"
+            "\n3. 修复账号额度或重新创建有效 API Key 后，再运行同一个生成命令。"
+            "\n\n不会自动改用本地矢量图、PIL 占位图或其他 provider，以免把 mockup 误当成最终效果。"
+        )
+    if provider_name == "agnes":
+        return (
+            "\n\n生成已停止：Agnes Image API 调用失败。"
+            "\n请检查 AGNES_API_KEY/GNES_API_KEY、账号状态、网络、模型名、图片尺寸或请求参数后再重试。"
+            "\n不会自动改用本地矢量图、占位图或其他 provider 生成最终长图。"
+        )
     return (
         "\n\n生成已停止：Seedream/即梦 API 调用失败。"
         "\n请根据上面的错误码检查 API Key、模型开通状态、账户额度、网络或请求参数后再重试。"
@@ -265,16 +345,39 @@ def build_failure_guidance(code, message):
     )
 
 
-def request_image(api_url, api_key, model, prompt, size, response_format, timeout, watermark):
-    payload = {
-        "model": model,
-        "prompt": prompt,
-        "size": size,
-        "response_format": response_format,
-        "stream": False,
-        "watermark": watermark,
-        "sequential_image_generation": "disabled",
-    }
+def build_api_payload(provider, model, prompt, size, response_format, watermark):
+    provider_name = normalize_provider(provider)
+    if provider_name == "agnes":
+        payload = {
+            "model": model,
+            "prompt": prompt,
+            "size": size,
+        }
+        extra_body = {}
+        if response_format == "b64_json":
+            payload["return_base64"] = True
+            extra_body["response_format"] = "b64_json"
+        elif response_format == "url":
+            extra_body["response_format"] = "url"
+        if extra_body:
+            payload["extra_body"] = extra_body
+        return payload
+    if provider_name == "seedream":
+        return {
+            "model": model,
+            "prompt": prompt,
+            "size": size,
+            "response_format": response_format,
+            "stream": False,
+            "watermark": watermark,
+            "sequential_image_generation": "disabled",
+        }
+    raise ValueError(f"Unsupported image provider: {provider}")
+
+
+def request_image(provider, api_url, api_key, model, prompt, size, response_format, timeout, watermark):
+    provider_name = normalize_provider(provider)
+    payload = build_api_payload(provider_name, model, prompt, size, response_format, watermark)
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     request = urllib.request.Request(
         api_url,
@@ -291,9 +394,10 @@ def request_image(api_url, api_key, model, prompt, size, response_format, timeou
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
         error_code, message = parse_api_error(detail)
-        guidance = build_failure_guidance(error_code, message)
+        guidance = build_failure_guidance(error_code, message, provider_name)
         label = f"{error_code}: {message}" if error_code else detail
-        raise RuntimeError(f"Seedream API error {exc.code}: {label}{guidance}") from exc
+        provider_label = "Agnes Image API" if provider_name == "agnes" else "Seedream API"
+        raise RuntimeError(f"{provider_label} error {exc.code}: {label}{guidance}") from exc
 
 
 def save_image(item, out_path, timeout):
@@ -317,32 +421,36 @@ def main():
         load_env_file(Path(pre_args.env_file).expanduser(), override=True)
 
     parser = argparse.ArgumentParser(
-        description="Generate WeChat comic panel images with Volcengine Ark Seedream.",
+        description="Generate WeChat comic panel images with Agnes Image (default) or Volcengine Ark Seedream.",
         parents=[pre_parser],
     )
+    parser.add_argument("--provider", default=os.environ.get("COMIC_IMAGE_PROVIDER", DEFAULT_PROVIDER), help="Image provider: agnes/gnes (default) or seedream/doubao/ark")
     parser.add_argument("--prompts", required=True, help="JSON or text file containing panel prompts")
     parser.add_argument("--out-dir", required=True, help="Output directory for panel PNG files")
     parser.add_argument("--style", default="", help='Style name, alias, or JSON profile stem in --styles-dir; omit to use the profile marked "default": true')
     parser.add_argument("--style-profile", default="", help="Explicit JSON style profile to use")
     parser.add_argument("--styles-dir", default=str(DEFAULT_STYLES_DIR), help="Directory containing reusable JSON style profiles")
-    parser.add_argument("--model", default=os.environ.get("ARK_IMAGE_MODEL", DEFAULT_MODEL))
-    parser.add_argument("--api-url", default=os.environ.get("ARK_API_URL", DEFAULT_API_URL))
-    parser.add_argument("--api-key-env", default="DOUBAO_API_KEY", help="Environment variable containing Ark/Doubao API key")
-    parser.add_argument("--size", default="2304x1728", help="Seedream output size, for example 2304x1728, 1536x2560, or 2K")
+    parser.add_argument("--model", default="", help="Override provider default model")
+    parser.add_argument("--api-url", default="", help="Override provider default API URL")
+    parser.add_argument("--api-key-env", default="", help="Environment variable containing the selected provider API key")
+    parser.add_argument("--size", default="", help="Output size. Agnes default: 1024x768. Seedream default: 2304x1728")
     parser.add_argument("--response-format", default="b64_json", choices=["b64_json", "url"])
     parser.add_argument("--timeout", type=int, default=300)
     parser.add_argument("--sleep", type=float, default=0.0, help="Seconds to wait between requests")
-    parser.add_argument("--watermark", action="store_true", help="Ask API to add watermark")
+    parser.add_argument("--watermark", action="store_true", help="Ask Seedream API to add watermark; ignored by Agnes")
     args = parser.parse_args()
 
-    api_key, api_key_env = resolve_api_key(args.api_key_env)
+    try:
+        provider_config = resolve_provider_config(args.provider, args.model, args.api_url, args.api_key_env)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    args.size = args.size or provider_config["default_size"]
+
+    api_key, api_key_env = resolve_api_key(provider_config["api_key_envs"])
     if not api_key:
-        env_names = []
-        for name in (args.api_key_env, "DOUBAO_API_KEY", "ARK_API_KEY"):
-            if name not in env_names:
-                env_names.append(name)
         print(
-            f"Missing API key. Export one of: {', '.join(env_names)}; "
+            f"Missing API key for {provider_config['label']}. Export one of: {', '.join(provider_config['api_key_envs'])}; "
             "put it in the current directory .env; or pass --env-file /path/to/.env",
             file=sys.stderr,
         )
@@ -366,8 +474,10 @@ def main():
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     manifest = {
-        "api_url": args.api_url,
-        "model": args.model,
+        "provider": provider_config["provider"],
+        "provider_label": provider_config["label"],
+        "api_url": provider_config["api_url"],
+        "model": provider_config["model"],
         "style": style_name,
         "requested_style": args.style,
         "style_source": style_source,
@@ -387,9 +497,10 @@ def main():
         print(f"[{index}/{len(prompts)}] generating {out_path}", flush=True)
         try:
             response = request_image(
-                args.api_url,
+                provider_config["provider"],
+                provider_config["api_url"],
                 api_key,
-                args.model,
+                provider_config["model"],
                 full_prompt,
                 args.size,
                 args.response_format,
@@ -407,7 +518,8 @@ def main():
         if args.sleep and index < len(prompts):
             time.sleep(args.sleep)
 
-    (out_dir / "seedream-manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    manifest_name = f"{provider_config['provider']}-manifest.json"
+    (out_dir / manifest_name).write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"wrote {len(prompts)} panels to {out_dir}")
     return 0
 

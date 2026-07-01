@@ -1,6 +1,6 @@
 ---
 name: wechat-official-account-comic
-description: Generate WeChat Official Account comic long images as one publishable vertical image. Use when the user wants Chinese 公众号漫画, beginner guided topic selection, reusable comic style profiles, trained or distilled comic styles such as 小林风格, creator-style workflow planning, title formulas, comic scripting, image prompts, panel QA, deterministic layout, and Volcengine Ark Seedream or Agent image generation.
+description: Generate WeChat Official Account comic long images as one publishable vertical image. Use when the user wants Chinese 公众号漫画, beginner guided topic selection, reusable comic style profiles, trained or distilled comic styles such as 小林风格, creator-style workflow planning, title formulas, comic scripting, image prompts, panel QA, deterministic layout, and Agnes Image, Volcengine Ark Seedream, or Agent image generation.
 ---
 
 # WeChat Official Account Comic
@@ -79,7 +79,7 @@ After all images pass, use the approved beat order as the default final order. R
    - `小林诗意治愈`: 3-6 numbered poetic beats, each with one complete source image: quiet watercolor scene above plus a 2-4 line black handwritten caption inside the same image. Keep every beat self-contained and emotionally affirmative.
    - `小林生活讽刺`: 5-8 numbered life-observation beats, each with one complete source image: rough watercolor caricature people scene plus a 2-5 line black handwritten caption inside the same image. Keep every beat self-contained, slightly ironic, and easy to understand.
    - `小林奇想涂鸦`: 6-10 numbered whimsical philosophy beats, each with one complete source image: small cute animal, odd creature, or personified-object doodle plus a 2-5 line black handwritten caption inside the same image. Keep each beat light, surprising, and not too realistic.
-9. Generate panel images with either `scripts/generate_panels_seedream.py` or the current Agent's available image-generation tool. For `暖白手绘漫画` and `蓝栏柔彩漫画`, prefer no embedded text in generated panels. For `绿底粗线漫画` and `小林`-family styles, required in-image text must be generated directly by the chosen image model from quoted text in the prompt. For `小林`-family styles, quote each caption line and place it in the lower handwritten caption area of the same source image. Never include the WeChat article title in `Text to render exactly`.
+9. Generate panel images with either `scripts/generate_panels_seedream.py` or the current Agent's available image-generation tool. The script defaults to Agnes Image and can explicitly use Seedream with `--provider seedream`. For `暖白手绘漫画` and `蓝栏柔彩漫画`, prefer no embedded text in generated panels. For `绿底粗线漫画` and `小林`-family styles, required in-image text must be generated directly by the chosen image model from quoted text in the prompt. For `小林`-family styles, quote each caption line and place it in the lower handwritten caption area of the same source image. Never include the WeChat article title in `Text to render exactly`.
 10. For `小林`-family styles, run one prompt-only smoke test before a full article whenever the topic, text rhythm, or prompt recipe changes. Do not attach the training/reference screenshot for this smoke test. It passes only when the source image contains the watercolor scene and exact quoted handwritten caption in one bitmap, with no QR code, signature, account name, or extra text.
 11. Validate each generated image against the style's quality gate. Regenerate failed panels before layout instead of hiding problems in final composition.
 12. Save generated panel images into a project folder such as `output/comics/<中文标题>/panels/`.
@@ -89,12 +89,13 @@ After all images pass, use the approved beat order as the default final order. R
 
 ## Image Provider Choice
 
-Use one of two panel-generation paths:
+Use one of three panel-generation paths:
 
+- **Agnes API path (default)**: for WorkBuddy or other non-Codex runtimes, use `scripts/generate_panels_seedream.py` without a provider flag. It calls Agnes Image 2.0 Flash through `https://apihub.agnes-ai.com/v1/images/generations`, reads `AGNES_API_KEY` by default, and accepts `GNES_API_KEY` or `AGNESAI_API_KEY` as aliases.
+- **Volcengine Ark/Doubao Seedream API path**: use the same script with `--provider seedream` when the user explicitly chooses Seedream or already has a Doubao/Ark key. It reads `DOUBAO_API_KEY` by default and accepts `ARK_API_KEY` as a fallback.
 - **Codex / Agent imagegen path**: if the current runtime is Codex and image generation is available, use Codex's image-generation capability to create panels from the selected profile. For `小林`-family styles, use prompt-only generation from the matching profile, such as `styles/xiaolin-healing.json` or `styles/xiaolin-life-satire.json`; do not use the user's screenshot as a reference unless explicitly re-training. Save each generated panel as `panels/panel-01.png`, `panels/panel-02.png`, etc., then run `scripts/build_long_comic.py`.
-- **Third-party API path**: if the runtime is not Codex, or no Agent image-generation capability is available, use a supported third-party image API. This skill currently includes `scripts/generate_panels_seedream.py` for Volcengine Ark/Doubao Seedream batch generation from a prompts file.
 
-Do not claim that the Python script can directly call Codex imagegen or another Agent's image-generation tool. Interactive image generation is an agent/tool workflow, while `generate_panels_seedream.py` is only for the Seedream/Doubao HTTP API.
+Do not claim that the Python script can directly call Codex imagegen or another Agent's image-generation tool. Interactive image generation is an agent/tool workflow, while `generate_panels_seedream.py` is only for supported third-party HTTP APIs: Agnes by default, or Seedream when selected.
 
 ## Training New Comic Styles
 
@@ -113,7 +114,9 @@ Do not copy a reference account's fixed characters, title banner, logo, author s
 
 ## API Failure Handling
 
-If Seedream/即梦 image generation fails while using the Seedream path, stop that workflow and report the real API problem to the user. Do not silently switch to local vector drawings, SVG, PIL placeholder panels, canvas mockups, or another provider for a deliverable long image unless the user explicitly chooses a different provider such as an Agent image-generation tool.
+If image generation fails while using Agnes or Seedream, stop that workflow and report the real API problem to the user. Do not silently switch to local vector drawings, SVG, PIL placeholder panels, canvas mockups, or another provider for a deliverable long image unless the user explicitly chooses a different provider such as Seedream or an Agent image-generation tool.
+
+For Agnes failures, first check `AGNES_API_KEY` or the accepted aliases, then the Agnes account state, token plan, model name, network access, and request parameters. Keep drafted `panel-prompts.json` and `article.json` files so the same job can be rerun after the account/key issue is fixed.
 
 When the API returns `AccountOverdueError`, `InsufficientBalance`, balance shortage, arrears, quota exhaustion, or a similar billing error:
 
@@ -132,7 +135,7 @@ Seedream/即梦 面板生成已停止：火山方舟返回账号欠费/余额不
 
 ## Panel Prompt Pattern
 
-Use this pattern for Seedream prompts:
+Use this pattern for third-party image prompts:
 
 ```text
 Use case: illustration-story
@@ -154,9 +157,9 @@ For `蓝栏柔彩漫画`, match the reference psychological WeChat longform look
 
 For `绿底粗线漫画`, generated panel art should match the reference screenshot's broad WeChat workplace-comic language: rough thick black hand-drawn outlines, lightly wobbly ink edges, flat color blocks with subtle paper-grain texture, simplified expressive Chinese office workers, dense but readable office scenes, and a recurring young Chinese woman employee with light-brown shoulder-length hair, green clothing, white striped sleeves or a brown jacket, blue pants, and a work badge. Use muted grass green, sky blue, mustard yellow, warm brown, orange, gray purple, and off-white. Do not make it polished anime, photorealistic, watercolor-soft, 3D, or glossy.
 
-For `绿底粗线漫画`, all text inside panel images must be rendered directly by Seedream, including black header-bar text, speech bubbles, thought bubbles, phone/chat messages, timestamps, sound effects, and small emphasized words. Every exact text string that should appear in the image must be wrapped in quotation marks in the panel prompt, for example `"上班第一年"` or `"好想走......可是大家都不走"`. Use short lines and specify where each quoted text belongs: black top title bar, white speech bubble, white chat/message box, time tag, or large white text with black outline. Ask Seedream to copy quoted Chinese exactly without rewriting, shortening, replacing synonyms, or dropping characters; long text may wrap to multiple lines but must keep the original order. The layout script should only stack finished panels and apply outer article background/spacing for `绿底粗线漫画`; it should not add extra in-panel bubbles or dialogue text.
+For `绿底粗线漫画`, all text inside panel images must be rendered directly by the selected image model, including black header-bar text, speech bubbles, thought bubbles, phone/chat messages, timestamps, sound effects, and small emphasized words. Every exact text string that should appear in the image must be wrapped in quotation marks in the panel prompt, for example `"上班第一年"` or `"好想走......可是大家都不走"`. Use short lines and specify where each quoted text belongs: black top title bar, white speech bubble, white chat/message box, time tag, or large white text with black outline. Ask the image model to copy quoted Chinese exactly without rewriting, shortening, replacing synonyms, or dropping characters; long text may wrap to multiple lines but must keep the original order. The layout script should only stack finished panels and apply outer article background/spacing for `绿底粗线漫画`; it should not add extra in-panel bubbles or dialogue text.
 
-For `绿底粗线漫画`, do not use quoted text for non-rendered instructions. Any quoted text is treated as text Seedream should draw. Ask Seedream to render only the quoted strings and forbid extra text, English, pinyin, random labels, UI text, wall text, watermarks, logos, signatures, and garbled characters.
+For `绿底粗线漫画`, do not use quoted text for non-rendered instructions. Any quoted text is treated as text the selected image model should draw. Ask the selected image model to render only the quoted strings and forbid extra text, English, pinyin, random labels, UI text, wall text, watermarks, logos, signatures, and garbled characters.
 
 For `小林`-family styles, generate each source panel as one finished source image, not as illustration-only art. The prompt must include both the watercolor scene and the exact caption text. Wrap each caption line in double quotation marks, for example `"人这一生"`, `"自私很容易"`, `"爱自己却很难"`. The model must render only those quoted Chinese strings in the lower caption area.
 
@@ -182,7 +185,7 @@ Read `docs/layout-guide.md` when matching a provided reference or planning a new
 
 ## Script
 
-Generate panels with `scripts/generate_panels_seedream.py` only when using the Seedream/Doubao batch path. The API key must come from an environment variable or an external `.env` file, and must never be written into tracked repo files.
+Generate panels with `scripts/generate_panels_seedream.py` only when using the Agnes or Seedream batch API path. The API key must come from an environment variable or an external `.env` file, and must never be written into tracked repo files.
 
 Install the local layout dependency before running `scripts/build_long_comic.py`:
 
@@ -196,15 +199,25 @@ The script resolves API settings with this priority:
 2. Already exported shell environment variables.
 3. The current working directory's `.env`
 
-Use `DOUBAO_API_KEY` by default. `ARK_API_KEY` is still accepted as a fallback.
+Use Agnes by default. Store the key as `AGNES_API_KEY`; `GNES_API_KEY` and `AGNESAI_API_KEY` are accepted as aliases.
+
+```bash
+export AGNES_API_KEY="your-api-key"
+python3 wechat-official-account-comic/scripts/generate_panels_seedream.py \
+  --prompts output/comics/文章标题/panel-prompts.json \
+  --out-dir output/comics/文章标题/panels \
+  --style 暖白手绘漫画
+```
+
+To use Volcengine Ark/Doubao Seedream instead, pass `--provider seedream` and use `DOUBAO_API_KEY`; `ARK_API_KEY` is still accepted as a fallback.
 
 ```bash
 export DOUBAO_API_KEY="your-api-key"
 python3 wechat-official-account-comic/scripts/generate_panels_seedream.py \
+  --provider seedream \
   --prompts output/comics/文章标题/panel-prompts.json \
   --out-dir output/comics/文章标题/panels \
   --style 暖白手绘漫画 \
-  --model doubao-seedream-4-5-251128 \
   --size 2304x1728
 ```
 
@@ -234,7 +247,7 @@ output/comics/文章标题/panels/panel-02.png
 output/comics/文章标题/panels/panel-03.png
 ```
 
-For `暖白手绘漫画`, prefer landscape or moderate-height panels so one image does not fill an entire phone screen. Recommended panel source size is `2304x1728` (4:3, valid for Seedream 4.5 minimum pixel requirements). In the final long image, place panels at about `520-540px` wide, producing roughly `390-405px` height per panel. Avoid tall source sizes such as `1536x2560` unless a deliberately vertical scene is needed.
+For `暖白手绘漫画`, prefer landscape or moderate-height panels so one image does not fill an entire phone screen. Agnes defaults to `1024x768`; Seedream can use `2304x1728` (4:3, valid for Seedream 4.5 minimum pixel requirements). In the final long image, place panels at about `520-540px` wide, producing roughly `390-405px` height per panel. Avoid tall source sizes such as `1536x2560` unless a deliberately vertical scene is needed.
 
 Then use `scripts/build_long_comic.py`:
 
@@ -276,7 +289,7 @@ Before finishing, verify:
 - The output is one vertical image and opens successfully.
 - The WeChat article title is not inside the final long image.
 - The output must use real generated panel images from the selected provider unless the user explicitly requested a layout-only mockup.
-- If Seedream/即梦 generation failed because of API key, quota, billing, account overdue, or network errors, stop and explain the error instead of substituting vector or placeholder panels.
+- If Agnes or Seedream generation failed because of API key, quota, billing, account status, or network errors, stop and explain the error instead of substituting vector or placeholder panels.
 - Chinese text is embedded in the image, readable at mobile width, and not clipped.
 - Centered Chinese lines should not end with decorative punctuation such as `，` `。` `；` `：`; clean these before stitching.
 - Generated panels do not contain garbled text, watermarks, copied logos, copied characters, QR codes, signatures, or account names. For `小林`-family styles, manually compare every caption character against the quoted prompt text; if a character is wrong, missing, or replaced, regenerate the panel instead of accepting the long image.
