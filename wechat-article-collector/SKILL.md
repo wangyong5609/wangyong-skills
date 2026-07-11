@@ -103,8 +103,9 @@ DAJIALA_COOKIE="optional-cookie"
 ```text
 <公众号名>/
 ├── 文章数据.csv
-├── 评论数据.csv
 ├── <日期>-<标题>.md
+├── 评论/
+│   └── <文章标题>.csv
 └── assets/
     └── <日期>-<标题>/
         ├── cover.jpg
@@ -118,7 +119,7 @@ DAJIALA_COOKIE="optional-cookie"
 title,content,article_url,publish_time,account,author,digest,read,like,looking,share,collect,comment_count
 ```
 
-`评论数据.csv` 的字段固定为：
+`评论/<文章标题>.csv` 每篇文章单独生成，文件名只使用文章标题。字段固定为：
 
 ```text
 article_url,content,like_num,is_top,province_name

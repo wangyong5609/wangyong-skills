@@ -520,6 +520,10 @@ def article_file_name(article: dict[str, Any]) -> str:
     return f"{article['date']}-{sanitize_filename(article['title'])}.md"
 
 
+def comment_file_name(article: dict[str, Any]) -> str:
+    return f"{sanitize_filename(article['title'])}.csv"
+
+
 def write_article(output_dir: Path, article: dict[str, Any], timeout: int) -> tuple[Path, ImageLocalizer]:
     account_dir = output_dir / sanitize_filename(article["account"])
     account_dir.mkdir(parents=True, exist_ok=True)
@@ -597,11 +601,29 @@ def write_tables(account_dir: Path, articles: list[dict[str, Any]], comments: li
         for article in sorted(articles, key=lambda item: item.get("publish_time") or "", reverse=True):
             writer.writerow({key: article.get(key, "") for key in ARTICLE_FIELDS})
 
-    with (account_dir / "评论数据.csv").open("w", encoding="utf-8-sig", newline="") as file:
-        writer = csv.DictWriter(file, fieldnames=COMMENT_FIELDS, extrasaction="ignore")
-        writer.writeheader()
-        for comment in comments:
-            writer.writerow({key: comment.get(key, "") for key in COMMENT_FIELDS})
+    stale_comment_table = account_dir / "评论数据.csv"
+    if stale_comment_table.exists():
+        stale_comment_table.unlink()
+
+    comment_dir = account_dir / "评论"
+    comment_dir.mkdir(parents=True, exist_ok=True)
+    comments_by_url: dict[str, list[dict[str, Any]]] = {}
+    for comment in comments:
+        comments_by_url.setdefault(str(comment.get("article_url") or ""), []).append(comment)
+
+    used_paths: dict[Path, str] = {}
+    for article in articles:
+        article_url = str(article.get("article_url") or "")
+        path = comment_dir / comment_file_name(article)
+        previous_url = used_paths.get(path)
+        if previous_url and previous_url != article_url:
+            raise RuntimeError(f"文章标题重复，评论文件名冲突：{article['title']}")
+        used_paths[path] = article_url
+        with path.open("w", encoding="utf-8-sig", newline="") as file:
+            writer = csv.DictWriter(file, fieldnames=COMMENT_FIELDS, extrasaction="ignore")
+            writer.writeheader()
+            for comment in comments_by_url.get(article_url, []):
+                writer.writerow({key: comment.get(key, "") for key in COMMENT_FIELDS})
 
 
 def collect(args: argparse.Namespace) -> int:

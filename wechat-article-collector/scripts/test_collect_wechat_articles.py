@@ -149,18 +149,49 @@ class CollectorTests(unittest.TestCase):
         article = {key: f"article-{key}" for key in collector.ARTICLE_FIELDS}
         comment = {key: f"comment-{key}" for key in collector.COMMENT_FIELDS}
         article["publish_time"] = "2026-07-11 10:00:00"
+        comment["article_url"] = article["article_url"]
         with tempfile.TemporaryDirectory() as directory:
             account_dir = Path(directory)
+            (account_dir / "评论数据.csv").write_text("旧汇总文件", encoding="utf-8")
             collector.write_tables(account_dir, [article], [comment])
             with (account_dir / "文章数据.csv").open(encoding="utf-8-sig", newline="") as file:
                 article_rows = list(csv.DictReader(file))
-            with (account_dir / "评论数据.csv").open(encoding="utf-8-sig", newline="") as file:
+            comment_path = account_dir / "评论" / f"{article['title']}.csv"
+            with comment_path.open(encoding="utf-8-sig", newline="") as file:
                 comment_rows = list(csv.DictReader(file))
 
             self.assertEqual(list(article_rows[0]), collector.ARTICLE_FIELDS)
             self.assertEqual(list(comment_rows[0]), collector.COMMENT_FIELDS)
             self.assertEqual(set(article_rows[0]), set(collector.ARTICLE_FIELDS))
             self.assertEqual(set(comment_rows[0]), set(collector.COMMENT_FIELDS))
+            self.assertFalse((account_dir / "评论数据.csv").exists())
+
+    def test_each_article_gets_its_own_named_comment_file(self) -> None:
+        first = {key: "" for key in collector.ARTICLE_FIELDS}
+        first.update({"title": "第一篇文章", "article_url": "https://example/one", "publish_time": "2026-07-11"})
+        second = {key: "" for key in collector.ARTICLE_FIELDS}
+        second.update({"title": "第二篇文章", "article_url": "https://example/two", "publish_time": "2026-07-10"})
+        comments = [
+            {
+                "article_url": "https://example/two",
+                "content": "第二篇的评论",
+                "like_num": 1,
+                "is_top": 0,
+                "province_name": "广东",
+            }
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            account_dir = Path(directory)
+            collector.write_tables(account_dir, [first, second], comments)
+            first_path = account_dir / "评论" / "第一篇文章.csv"
+            second_path = account_dir / "评论" / "第二篇文章.csv"
+            self.assertTrue(first_path.exists())
+            self.assertTrue(second_path.exists())
+            with first_path.open(encoding="utf-8-sig", newline="") as file:
+                self.assertEqual(len(list(csv.DictReader(file))), 0)
+            with second_path.open(encoding="utf-8-sig", newline="") as file:
+                rows = list(csv.DictReader(file))
+            self.assertEqual(rows[0]["content"], "第二篇的评论")
 
     def test_image_failure_keeps_remote_reference_and_records_partial_result(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
