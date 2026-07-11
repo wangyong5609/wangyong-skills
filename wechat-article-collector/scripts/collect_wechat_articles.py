@@ -1,65 +1,94 @@
 #!/usr/bin/env python3
-"""Collect WeChat official-account articles into Markdown and CSV files.
-
-The script calls the Dajiala/Jizhiliao API endpoints:
-- POST /fbmain/monitor/v3/post_history
-- GET  /fbmain/monitor/v3/article_detail
-- POST /fbmain/monitor/v3/read_zan_pro
-"""
+"""Collect WeChat articles, local static images, metrics, and first-level comments."""
 
 from __future__ import annotations
 
 import argparse
 import csv
 import datetime as dt
+import hashlib
 import html
 import json
 import os
 import re
+import shutil
 import sys
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Optional
 
 
 API_BASE = "https://www.dajiala.com"
 DEFAULT_OUTPUT_DIR = Path(
     os.getenv("WECHAT_ARTICLE_OUTPUT_DIR", Path.cwd() / "output" / "wechat-articles")
 ).expanduser()
-WEEKDAYS = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
+ARTICLE_FIELDS = [
+    "title",
+    "content",
+    "article_url",
+    "publish_time",
+    "account",
+    "author",
+    "digest",
+    "read",
+    "like",
+    "looking",
+    "share",
+    "collect",
+    "comment_count",
+]
+COMMENT_FIELDS = ["article_url", "content", "like_num", "is_top", "province_name"]
+BLOCK_TAGS = {"p", "section", "div", "article", "blockquote"}
+SKIP_TAGS = {"head", "script", "style"}
+ImageResolver = Callable[[str, dict[str, Optional[str]]], Optional[str]]
 
 
 class SimpleHtmlToMarkdown(HTMLParser):
-    def __init__(self) -> None:
+    def __init__(self, image_resolver: ImageResolver | None = None) -> None:
         super().__init__(convert_charrefs=True)
         self.parts: list[str] = []
         self.href_stack: list[str | None] = []
+        self.image_resolver = image_resolver
+        self.skip_tag: str | None = None
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if self.skip_tag:
+            return
+        if tag in SKIP_TAGS:
+            self.skip_tag = tag
+            return
+
         attrs_dict = dict(attrs)
-        if tag in {"p", "section", "div", "br"}:
+        if tag in BLOCK_TAGS or tag == "br":
             self.parts.append("\n")
-        elif tag in {"h1", "h2", "h3"}:
+        elif tag in {"h1", "h2", "h3", "h4", "h5", "h6"}:
             self.parts.append("\n" + "#" * int(tag[1]) + " ")
         elif tag == "li":
             self.parts.append("\n- ")
         elif tag == "img":
             src = attrs_dict.get("data-src") or attrs_dict.get("src") or ""
             alt = attrs_dict.get("alt") or ""
-            if src:
-                self.parts.append(f"\n![{alt}]({src})\n")
+            if not src:
+                return
+            resolved = self.image_resolver(src, attrs_dict) if self.image_resolver else src
+            if resolved:
+                self.parts.append(f"\n![{alt}]({resolved})\n")
         elif tag == "a":
             self.href_stack.append(attrs_dict.get("href"))
         elif tag in {"strong", "b"}:
             self.parts.append("**")
 
     def handle_endtag(self, tag: str) -> None:
-        if tag in {"p", "section", "div", "h1", "h2", "h3", "li"}:
+        if self.skip_tag:
+            if tag == self.skip_tag:
+                self.skip_tag = None
+            return
+        if tag in BLOCK_TAGS or tag.startswith("h") and tag[1:].isdigit() or tag == "li":
             self.parts.append("\n")
         elif tag == "a":
             href = self.href_stack.pop() if self.href_stack else None
@@ -69,18 +98,57 @@ class SimpleHtmlToMarkdown(HTMLParser):
             self.parts.append("**")
 
     def handle_data(self, data: str) -> None:
+        if self.skip_tag:
+            return
         text = html.unescape(data).strip()
-        if text:
-            if self.href_stack:
-                self.parts.append(f"[{text}]")
-            else:
-                self.parts.append(text)
+        if not text:
+            return
+        if self.href_stack:
+            self.parts.append(f"[{text}]")
+        else:
+            self.parts.append(text)
 
     def markdown(self) -> str:
         text = "".join(self.parts)
         text = re.sub(r"[ \t]+\n", "\n", text)
         text = re.sub(r"\n{3,}", "\n\n", text)
         return text.strip()
+
+
+class SimpleHtmlToText(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.parts: list[str] = []
+        self.skip_tag: str | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        del attrs
+        if self.skip_tag:
+            return
+        if tag in SKIP_TAGS:
+            self.skip_tag = tag
+        elif tag in BLOCK_TAGS or tag in {"br", "li"} or tag.startswith("h") and tag[1:].isdigit():
+            self.parts.append("\n")
+
+    def handle_endtag(self, tag: str) -> None:
+        if self.skip_tag:
+            if tag == self.skip_tag:
+                self.skip_tag = None
+            return
+        if tag in BLOCK_TAGS or tag == "li" or tag.startswith("h") and tag[1:].isdigit():
+            self.parts.append("\n")
+
+    def handle_data(self, data: str) -> None:
+        if not self.skip_tag:
+            text = html.unescape(data).strip()
+            if text:
+                self.parts.append(text)
+
+    def text(self) -> str:
+        value = "".join(self.parts)
+        value = re.sub(r"[ \t]+\n", "\n", value)
+        value = re.sub(r"\n{3,}", "\n\n", value)
+        return value.strip()
 
 
 def load_dotenv(path: Path, *, override: bool = False) -> None:
@@ -93,9 +161,7 @@ def load_dotenv(path: Path, *, override: bool = False) -> None:
         key, value = line.split("=", 1)
         key = key.strip()
         value = value.strip().strip('"').strip("'")
-        if not value:
-            continue
-        if override or key not in os.environ:
+        if value and (override or key not in os.environ):
             os.environ[key] = value
 
 
@@ -108,7 +174,7 @@ def env_first(*names: str) -> str:
 
 
 def sanitize_filename(value: str, max_len: int = 80) -> str:
-    value = re.sub(r"[\\/:*?\"<>|#\n\r\t]", " ", value)
+    value = re.sub(r'[\\/:*?"<>|#\n\r\t]', " ", value)
     value = re.sub(r"\s+", " ", value).strip(" .")
     return (value or "未命名")[:max_len]
 
@@ -117,12 +183,12 @@ def parse_ts(value: Any) -> dt.datetime | None:
     if value in (None, ""):
         return None
     if isinstance(value, (int, float)) or str(value).isdigit():
-        num = int(value)
-        if num > 100000000000:
-            num //= 1000
-        return dt.datetime.fromtimestamp(num)
+        number = int(value)
+        if number > 100000000000:
+            number //= 1000
+        return dt.datetime.fromtimestamp(number)
     text = str(value).strip()
-    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%Y/%m/%d %H:%M:%S"):
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d", "%Y/%m/%d %H:%M:%S"):
         try:
             return dt.datetime.strptime(text, fmt)
         except ValueError:
@@ -133,21 +199,145 @@ def parse_ts(value: Any) -> dt.datetime | None:
         return None
 
 
-def yaml_scalar(value: Any) -> str:
-    if value is None:
-        return '""'
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, (int, float)):
-        return str(value)
-    text = str(value).replace("\\", "\\\\").replace('"', '\\"')
-    return f'"{text}"'
-
-
-def html_to_markdown(html_text: str) -> str:
-    parser = SimpleHtmlToMarkdown()
+def html_to_markdown(html_text: str, image_resolver: ImageResolver | None = None) -> str:
+    parser = SimpleHtmlToMarkdown(image_resolver=image_resolver)
     parser.feed(html_text or "")
     return parser.markdown()
+
+
+def html_to_text(html_text: str) -> str:
+    parser = SimpleHtmlToText()
+    parser.feed(html_text or "")
+    return parser.text()
+
+
+def is_gif_reference(url: str, attrs: dict[str, str | None] | None = None) -> bool:
+    attrs = attrs or {}
+    if str(attrs.get("data-type") or "").lower() == "gif":
+        return True
+    parsed = urllib.parse.urlparse(html.unescape(url))
+    query = urllib.parse.parse_qs(parsed.query)
+    if (query.get("wx_fmt") or [""])[0].lower() == "gif":
+        return True
+    return parsed.path.lower().endswith(".gif")
+
+
+def image_extension(data: bytes, content_type: str, url: str) -> str:
+    media_type = content_type.split(";", 1)[0].strip().lower()
+    by_type = {
+        "image/jpeg": ".jpg",
+        "image/jpg": ".jpg",
+        "image/png": ".png",
+        "image/webp": ".webp",
+        "image/avif": ".avif",
+        "image/bmp": ".bmp",
+        "image/svg+xml": ".svg",
+    }
+    if media_type in by_type:
+        return by_type[media_type]
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return ".png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return ".jpg"
+    if data.startswith(b"RIFF") and data[8:12] == b"WEBP":
+        return ".webp"
+    parsed = urllib.parse.urlparse(url)
+    fmt = (urllib.parse.parse_qs(parsed.query).get("wx_fmt") or [""])[0].lower()
+    if fmt in {"jpeg", "jpg", "png", "webp", "avif", "bmp"}:
+        return ".jpg" if fmt == "jpeg" else f".{fmt}"
+    suffix = Path(parsed.path).suffix.lower()
+    return suffix if suffix in {".jpg", ".jpeg", ".png", ".webp", ".avif", ".bmp", ".svg"} else ".bin"
+
+
+@dataclass
+class ImageLocalizer:
+    asset_dir: Path
+    relative_asset_dir: Path
+    referer: str
+    timeout: int = 30
+    retries: int = 3
+    downloaded: int = 0
+    skipped_gifs: int = 0
+    failures: list[str] = field(default_factory=list)
+    url_cache: dict[str, str | None] = field(default_factory=dict)
+    digest_cache: dict[str, str] = field(default_factory=dict)
+    next_index: int = 1
+
+    def resolve(self, url: str, attrs: dict[str, str | None]) -> str | None:
+        return self.localize(url, attrs=attrs)
+
+    def localize(
+        self,
+        url: str,
+        *,
+        attrs: dict[str, str | None] | None = None,
+        preferred_name: str = "",
+    ) -> str | None:
+        url = html.unescape(url).strip()
+        if not url:
+            return None
+        if url.startswith("//"):
+            url = "https:" + url
+        if not url.lower().startswith(("http://", "https://")):
+            return url
+        if url in self.url_cache:
+            return self.url_cache[url]
+        if is_gif_reference(url, attrs):
+            self.skipped_gifs += 1
+            self.url_cache[url] = None
+            return None
+
+        error = "unknown error"
+        for attempt in range(1, self.retries + 1):
+            try:
+                request = urllib.request.Request(
+                    url,
+                    headers={
+                        "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+                        "Referer": self.referer,
+                        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+                    },
+                )
+                with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                    data = response.read()
+                    content_type = response.headers.get("Content-Type", "")
+                if not data:
+                    raise RuntimeError("empty image response")
+                if content_type.lower().startswith("image/gif") or data.startswith((b"GIF87a", b"GIF89a")):
+                    self.skipped_gifs += 1
+                    self.url_cache[url] = None
+                    return None
+
+                digest = hashlib.sha256(data).hexdigest()
+                if digest in self.digest_cache:
+                    relative = self.digest_cache[digest]
+                    self.url_cache[url] = relative
+                    return relative
+
+                extension = image_extension(data, content_type, url)
+                if extension == ".bin":
+                    raise RuntimeError(f"unsupported image type: {content_type or 'unknown'}")
+                if preferred_name:
+                    filename = sanitize_filename(preferred_name, max_len=40) + extension
+                else:
+                    filename = f"{self.next_index:03d}{extension}"
+                    self.next_index += 1
+                self.asset_dir.mkdir(parents=True, exist_ok=True)
+                destination = self.asset_dir / filename
+                destination.write_bytes(data)
+                relative = (self.relative_asset_dir / filename).as_posix()
+                self.digest_cache[digest] = relative
+                self.url_cache[url] = relative
+                self.downloaded += 1
+                return relative
+            except (OSError, RuntimeError, urllib.error.URLError) as exc:
+                error = str(exc)
+                if attempt < self.retries:
+                    time.sleep(0.4 * attempt)
+
+        self.failures.append(f"{url}: {error}")
+        self.url_cache[url] = url
+        return url
 
 
 @dataclass
@@ -168,9 +358,7 @@ class DajialaClient:
     ) -> dict[str, Any]:
         url = self.api_base.rstrip("/") + path
         if params:
-            query = urllib.parse.urlencode(params, doseq=True, safe="")
-            url = f"{url}?{query}"
-
+            url = f"{url}?{urllib.parse.urlencode(params, doseq=True, safe='')}"
         data = None
         headers = {
             "Accept": "application/json, text/plain, */*",
@@ -181,56 +369,47 @@ class DajialaClient:
             headers["Content-Type"] = "application/json"
         if self.cookie:
             headers["Cookie"] = self.cookie
-
-        req = urllib.request.Request(url, data=data, headers=headers, method=method)
+        request = urllib.request.Request(url, data=data, headers=headers, method=method)
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                raw = resp.read().decode("utf-8")
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                raw = response.read().decode("utf-8")
         except urllib.error.HTTPError as exc:
             raw = exc.read().decode("utf-8", errors="replace")
             raise RuntimeError(f"HTTP {exc.code}: {raw[:300]}") from exc
-
         try:
             return json.loads(raw)
         except json.JSONDecodeError as exc:
             raise RuntimeError(f"接口返回不是 JSON: {raw[:300]}") from exc
 
+    def credentials(self) -> dict[str, str]:
+        return {"key": self.api_key, "verifycode": self.verifycode}
+
     def history(self, account: str, page: int) -> dict[str, Any]:
         return self.request_json(
             "POST",
             "/fbmain/monitor/v3/post_history",
-            body={
-                "biz": "",
-                "url": "",
-                "name": account,
-                "page": page,
-                "key": self.api_key,
-                "verifycode": self.verifycode,
-            },
+            body={"biz": "", "url": "", "name": account, "page": page, **self.credentials()},
         )
 
-    def detail(self, article_url: str) -> dict[str, Any]:
+    def article_html(self, article_url: str) -> dict[str, Any]:
         return self.request_json(
-            "GET",
-            "/fbmain/monitor/v3/article_detail",
-            params={
-                "url": article_url,
-                "key": self.api_key,
-                "model": 1,
-                "mode": 1,
-                "verifycode": self.verifycode,
-            },
+            "POST",
+            "/fbmain/monitor/v3/article_html",
+            body={"url": article_url, **self.credentials()},
         )
 
     def metrics(self, article_url: str) -> dict[str, Any]:
         return self.request_json(
             "POST",
             "/fbmain/monitor/v3/read_zan_pro",
-            body={
-                "url": article_url,
-                "key": self.api_key,
-                "verifycode": self.verifycode,
-            },
+            body={"url": article_url, **self.credentials()},
+        )
+
+    def comments(self, article_url: str, buffer: str) -> dict[str, Any]:
+        return self.request_json(
+            "POST",
+            "/fbmain/monitor/v3/article_comment2",
+            body={"url": article_url, "buffer": buffer, **self.credentials()},
         )
 
 
@@ -240,189 +419,189 @@ def assert_ok(response: dict[str, Any], context: str, allow_end: bool = False) -
         return
     if allow_end and code in (110, 115):
         return
-    msg = response.get("msg") or response.get("message") or ""
-    raise RuntimeError(f"{context}失败: code={code}, msg={msg}")
+    message = response.get("msg") or response.get("msk") or response.get("message") or ""
+    raise RuntimeError(f"{context}失败: code={code}, msg={message}")
 
 
 def pick_metrics(response: dict[str, Any]) -> dict[str, int]:
     data = response.get("data") or {}
     return {
-        "read": int(data.get("read") or data.get("read_num") or 0),
-        "like": int(data.get("zan") or data.get("like_num") or 0),
-        "looking": int(data.get("looking") or data.get("old_like_num") or 0),
-        "share": int(data.get("share_num") or data.get("share_count") or 0),
+        "read": int(data.get("read") or 0),
+        "like": int(data.get("zan") or 0),
+        "looking": int(data.get("looking") or 0),
+        "share": int(data.get("share_num") or 0),
         "collect": int(data.get("collect_num") or 0),
-        "comment": int(data.get("comment_count") or 0),
+        "comment_count": int(data.get("comment_count") if data.get("comment_count") is not None else 0),
     }
 
 
-def merge_article(account: str, history: dict[str, Any], detail: dict[str, Any], metrics: dict[str, int]) -> dict[str, Any]:
-    publish_dt = parse_ts(history.get("post_time") or detail.get("pubtime") or detail.get("create_time"))
-    markdown = html_to_markdown(detail.get("content_multi_text") or "")
-    plain_content = detail.get("content") or ""
-    if not markdown:
-        markdown = plain_content.strip()
+def collect_first_level_comments(client: DajialaClient, article_url: str) -> list[dict[str, Any]]:
+    collected: list[dict[str, Any]] = []
+    seen_comments: set[str] = set()
+    seen_buffers: set[str] = set()
+    buffer = ""
 
-    images = detail.get("picture_page_info_list") or []
-    videos = detail.get("video_page_infos") or []
+    for page in range(1, 101):
+        response = client.comments(article_url, buffer)
+        if response.get("code") == 103:
+            return []
+        assert_ok(response, f"获取一级评论第 {page} 页")
+        items = response.get("data") or []
+        total = int(response.get("total") or 0)
+        for item in items:
+            dedupe_key = str(
+                item.get("content_id")
+                or item.get("id")
+                or hashlib.sha256(
+                    "|".join(
+                        [
+                            str(item.get("content") or ""),
+                            str(item.get("create_time_stamp") or ""),
+                            str(item.get("nick_name") or ""),
+                        ]
+                    ).encode("utf-8")
+                ).hexdigest()
+            )
+            if dedupe_key in seen_comments:
+                continue
+            seen_comments.add(dedupe_key)
+            collected.append(
+                {
+                    "article_url": article_url,
+                    "content": item.get("content") or "",
+                    "like_num": int(item.get("like_num") or 0),
+                    "is_top": int(item.get("is_top") or 0),
+                    "province_name": item.get("province_name") or "",
+                }
+            )
+
+        next_buffer_value = response.get("buffer")
+        next_buffer = "" if next_buffer_value in (None, "") else str(next_buffer_value)
+        if not items or not next_buffer or next_buffer in seen_buffers or total and len(collected) >= total:
+            break
+        seen_buffers.add(next_buffer)
+        buffer = next_buffer
+    else:
+        raise RuntimeError("一级评论翻页超过 100 页，已停止以避免无限请求")
+
+    return collected
+
+
+def merge_article(
+    requested_account: str,
+    history: dict[str, Any],
+    html_response: dict[str, Any],
+    metrics: dict[str, int],
+) -> dict[str, Any]:
+    data = html_response.get("data") or {}
+    html_content = data.get("html") or ""
+    publish_dt = parse_ts(data.get("post_time") or data.get("post_time_str") or history.get("post_time"))
     return {
-        "title": detail.get("title") or history.get("title") or "无标题",
-        "account": detail.get("nick_name") or account,
-        "author": detail.get("author") or "",
-        "url": detail.get("url") or history.get("url") or "",
-        "source_url": detail.get("source_url") or "",
-        "digest": detail.get("desc") or history.get("digest") or "",
+        "title": data.get("title") or history.get("title") or "无标题",
+        "content": html_to_text(html_content),
+        "article_url": history.get("url") or data.get("article_url") or "",
         "publish_time": publish_dt.isoformat(sep=" ") if publish_dt else "",
         "date": publish_dt.date().isoformat() if publish_dt else "未知日期",
-        "year": publish_dt.year if publish_dt else "",
-        "month": publish_dt.month if publish_dt else "",
-        "weekday": WEEKDAYS[publish_dt.weekday()] if publish_dt else "",
-        "cover": detail.get("cdn_url_1_1") or history.get("cover_url") or history.get("pic_cdn_url_1_1") or "",
-        "biz": detail.get("biz") or "",
-        "hashid": detail.get("hashid") or "",
-        "idx": detail.get("idx") or history.get("position") or "",
-        "appmsgid": history.get("appmsgid") or "",
-        "original": detail.get("copyright_stat") if detail.get("copyright_stat") is not None else history.get("original"),
-        "item_show_type": detail.get("item_show_type") or history.get("item_show_type") or "",
+        "account": data.get("nickname") or requested_account,
+        "author": data.get("author") or "",
+        "digest": data.get("desc") or history.get("digest") or "",
         "read": metrics["read"],
         "like": metrics["like"],
         "looking": metrics["looking"],
         "share": metrics["share"],
         "collect": metrics["collect"],
-        "comment": metrics["comment"],
-        "word_count": len(plain_content),
-        "images": images,
-        "videos": videos,
-        "content": markdown,
-        "plain_content": plain_content,
+        "comment_count": metrics["comment_count"],
+        "_html": html_content,
+        "_cover_url": data.get("cover_url") or history.get("cover_url") or "",
     }
 
 
 def article_file_name(article: dict[str, Any]) -> str:
-    unique = str(article.get("appmsgid") or article.get("hashid") or "")
-    suffix = f"-{unique}" if unique else ""
-    return f"{article['date']}-{sanitize_filename(article['title'])}{suffix}.md"
+    return f"{article['date']}-{sanitize_filename(article['title'])}.md"
 
 
-def write_article(output_dir: Path, article: dict[str, Any]) -> Path:
+def write_article(output_dir: Path, article: dict[str, Any], timeout: int) -> tuple[Path, ImageLocalizer]:
     account_dir = output_dir / sanitize_filename(article["account"])
     account_dir.mkdir(parents=True, exist_ok=True)
+    article_path = account_dir / article_file_name(article)
+    asset_folder_name = article_path.stem
+    asset_dir = account_dir / "assets" / asset_folder_name
+    staging_asset_dir = asset_dir.parent / f".{asset_folder_name}.tmp"
+    if staging_asset_dir.exists():
+        shutil.rmtree(staging_asset_dir)
 
-    path = account_dir / article_file_name(article)
-
-    frontmatter_keys = [
-        "title",
-        "account",
-        "author",
-        "url",
-        "source_url",
-        "digest",
-        "publish_time",
-        "date",
-        "year",
-        "month",
-        "weekday",
-        "cover",
-        "biz",
-        "hashid",
-        "idx",
-        "appmsgid",
-        "original",
-        "item_show_type",
-        "read",
-        "like",
-        "looking",
-        "share",
-        "collect",
-        "comment",
-        "word_count",
-    ]
-    fm = ["---"]
-    for key in frontmatter_keys:
-        fm.append(f"{key}: {yaml_scalar(article.get(key))}")
-    fm.append("tags:")
-    fm.append("  - 公众号文章")
-    fm.append("  - 创作数据")
-    fm.append("---")
-
-    metric_table = "\n".join(
-        [
-            "| 指标 | 数值 |",
-            "| --- | ---: |",
-            f"| 阅读量 | {article['read']} |",
-            f"| 点赞 | {article['like']} |",
-            f"| 在看 | {article['looking']} |",
-            f"| 转发 | {article['share']} |",
-            f"| 收藏 | {article['collect']} |",
-            f"| 评论 | {article['comment']} |",
-            f"| 字数 | {article['word_count']} |",
-        ]
+    localizer = ImageLocalizer(
+        asset_dir=staging_asset_dir,
+        relative_asset_dir=Path("assets") / asset_folder_name,
+        referer=article["article_url"],
+        timeout=timeout,
     )
-    cover_block = f"![封面]({article['cover']})" if article.get("cover") else ""
-    body_parts = [
-        "\n".join(fm),
-        f"# {article['title']}",
-    ]
-    if cover_block:
-        body_parts.append(cover_block)
-    body_parts.extend(
-        [
+    temporary_article_path = article_path.with_name(f".{article_path.name}.tmp")
+    try:
+        cover = ""
+        if article.get("_cover_url"):
+            cover = localizer.localize(article["_cover_url"], preferred_name="cover") or ""
+        markdown_content = html_to_markdown(article.get("_html") or "", localizer.resolve)
+        if not markdown_content:
+            markdown_content = article.get("content") or ""
+
+        metric_table = "\n".join(
+            [
+                "| 指标 | 数值 |",
+                "| --- | ---: |",
+                f"| 阅读 | {article['read']} |",
+                f"| 点赞 | {article['like']} |",
+                f"| 在看 | {article['looking']} |",
+                f"| 转发 | {article['share']} |",
+                f"| 收藏 | {article['collect']} |",
+                f"| 评论总数 | {article['comment_count']} |",
+            ]
+        )
+        parts = [
+            f"# {article['title']}",
             f"公众号：{article['account']}",
-            f"原文：{article['url']}",
+            f"作者：{article['author']}",
+            f"原文：{article['article_url']}",
             f"发布时间：{article['publish_time'] or '未知'}",
+            "摘要：" + (article["digest"] or "无"),
             metric_table,
-            "## 摘要\n" + (article["digest"] or "无"),
-            "## 正文\n" + (article["content"] or article["plain_content"] or "无正文"),
         ]
-    )
-    body = "\n\n".join(body_parts)
-    path.write_text(body + "\n", encoding="utf-8")
-    return path
+        if cover:
+            parts.append(f"![封面]({cover})")
+        parts.append("## 正文\n" + markdown_content)
+        temporary_article_path.write_text("\n\n".join(parts) + "\n", encoding="utf-8")
+
+        if asset_dir.exists():
+            shutil.rmtree(asset_dir)
+        if staging_asset_dir.exists():
+            staging_asset_dir.replace(asset_dir)
+        temporary_article_path.replace(article_path)
+    except Exception:
+        if staging_asset_dir.exists():
+            shutil.rmtree(staging_asset_dir)
+        if temporary_article_path.exists():
+            temporary_article_path.unlink()
+        raise
+    return article_path, localizer
 
 
-def write_indexes(account_dir: Path, account: str, articles: list[dict[str, Any]]) -> None:
-    articles = sorted(articles, key=lambda x: x.get("publish_time") or "", reverse=True)
-    total_read = sum(int(a.get("read") or 0) for a in articles)
-    total_like = sum(int(a.get("like") or 0) for a in articles)
+def write_tables(account_dir: Path, articles: list[dict[str, Any]], comments: list[dict[str, Any]]) -> None:
+    account_dir.mkdir(parents=True, exist_ok=True)
+    stale_overview = account_dir / "账号概览.md"
+    if stale_overview.exists():
+        stale_overview.unlink()
 
-    overview_lines = [
-        f"# {account} 账号概览",
-        "",
-        f"- 文章数：{len(articles)}",
-        f"- 总阅读：{total_read}",
-        f"- 总点赞：{total_like}",
-        f"- 最近采集：{dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-        "",
-        "## 文章列表",
-    ]
-    for article in articles:
-        file_name = article_file_name(article)
-        link = urllib.parse.quote(file_name)
-        overview_lines.append(
-            f"- [{article['date']} {article['title']}]({link})"
-            f" 阅读 {article['read']} / 赞 {article['like']} / 在看 {article['looking']}"
-        )
-    (account_dir / "账号概览.md").write_text("\n".join(overview_lines) + "\n", encoding="utf-8")
-
-    with (account_dir / "文章数据.csv").open("w", encoding="utf-8-sig", newline="") as f:
-        writer = csv.DictWriter(
-            f,
-            fieldnames=[
-                "title",
-                "publish_time",
-                "url",
-                "read",
-                "like",
-                "looking",
-                "share",
-                "collect",
-                "comment",
-                "word_count",
-            ],
-        )
+    with (account_dir / "文章数据.csv").open("w", encoding="utf-8-sig", newline="") as file:
+        writer = csv.DictWriter(file, fieldnames=ARTICLE_FIELDS, extrasaction="ignore")
         writer.writeheader()
-        for article in articles:
-            writer.writerow({key: article.get(key, "") for key in writer.fieldnames})
+        for article in sorted(articles, key=lambda item: item.get("publish_time") or "", reverse=True):
+            writer.writerow({key: article.get(key, "") for key in ARTICLE_FIELDS})
+
+    with (account_dir / "评论数据.csv").open("w", encoding="utf-8-sig", newline="") as file:
+        writer = csv.DictWriter(file, fieldnames=COMMENT_FIELDS, extrasaction="ignore")
+        writer.writeheader()
+        for comment in comments:
+            writer.writerow({key: comment.get(key, "") for key in COMMENT_FIELDS})
 
 
 def collect(args: argparse.Namespace) -> int:
@@ -440,17 +619,23 @@ def collect(args: argparse.Namespace) -> int:
     )
     cookie = args.cookie or env_first("DAJIALA_COOKIE")
     if not api_key:
-        print("缺少 API key：请设置 DAJIALA_API_KEY，或传 --api-key", file=sys.stderr)
+        print(
+            "还没有配置极致了 API Key。请把 API Key 和附加码提供给 Agent，让它帮你完成本地配置。",
+            file=sys.stderr,
+        )
         return 2
 
     output_dir = Path(args.output_dir).expanduser()
     output_dir.mkdir(parents=True, exist_ok=True)
     account = args.account.strip()
     client = DajialaClient(api_key=api_key, verifycode=verifycode, cookie=cookie, timeout=args.timeout)
-
     start_date = dt.date.fromisoformat(args.start_date) if args.start_date else None
-    collected: list[dict[str, Any]] = []
+    articles: list[dict[str, Any]] = []
+    all_comments: list[dict[str, Any]] = []
     seen_urls: set[str] = set()
+    image_downloaded = 0
+    image_failures: list[str] = []
+    gif_skipped = 0
     page = 1
 
     while True:
@@ -465,7 +650,7 @@ def collect(args: argparse.Namespace) -> int:
         if not items:
             break
 
-        should_stop_by_date = False
+        should_stop = False
         for item in items:
             if not args.include_deleted and str(item.get("is_deleted", "0")) != "0":
                 continue
@@ -474,57 +659,67 @@ def collect(args: argparse.Namespace) -> int:
                 continue
             publish_dt = parse_ts(item.get("post_time") or item.get("post_time_str"))
             if start_date and publish_dt and publish_dt.date() < start_date:
-                should_stop_by_date = True
+                should_stop = True
                 continue
 
             seen_urls.add(article_url)
             print(f"  采集：{item.get('title') or article_url}")
-            detail = client.detail(article_url)
-            assert_ok(detail, "获取文章详情")
-            metric_values = {"read": 0, "like": 0, "looking": 0, "share": 0, "collect": 0, "comment": 0}
-            if args.collect_metrics:
-                metric_response = client.metrics(article_url)
-                assert_ok(metric_response, "获取互动数据")
-                metric_values = pick_metrics(metric_response)
+            html_response = client.article_html(article_url)
+            assert_ok(html_response, "获取文章 HTML")
+            metrics_response = client.metrics(article_url)
+            assert_ok(metrics_response, "获取互动数据")
+            comments = collect_first_level_comments(client, article_url)
+            article = merge_article(account, item, html_response, pick_metrics(metrics_response))
+            if not article["content"]:
+                raise RuntimeError(f"正文为空：{article['title']}")
+            _, localizer = write_article(output_dir, article, args.timeout)
+            image_downloaded += localizer.downloaded
+            image_failures.extend(localizer.failures)
+            gif_skipped += localizer.skipped_gifs
+            articles.append(article)
+            all_comments.extend(comments)
 
-            article = merge_article(account, item, detail, metric_values)
-            write_article(output_dir, article)
-            collected.append(article)
-            if args.limit and len(collected) >= args.limit:
-                should_stop_by_date = True
+            if args.limit and len(articles) >= args.limit:
+                should_stop = True
                 break
             time.sleep(args.delay)
 
         total_page = int(history_response.get("total_page") or 0)
-        if should_stop_by_date or (total_page and page >= total_page):
+        if should_stop or total_page and page >= total_page:
             break
         page += 1
         time.sleep(args.delay)
 
-    if collected:
-        account_name = collected[0]["account"] or account
+    if articles:
+        account_name = articles[0]["account"] or account
         account_dir = output_dir / sanitize_filename(account_name)
-        write_indexes(account_dir, account_name, collected)
-    print(f"完成：采集 {len(collected)} 篇，输出目录 {output_dir}")
-    return 0
+        write_tables(account_dir, articles, all_comments)
+
+    status = "部分成功" if image_failures else "成功"
+    print(
+        f"完成：{status}；文章 {len(articles)} 篇，一级评论 {len(all_comments)} 条，"
+        f"本地静态图片 {image_downloaded} 张，跳过 GIF {gif_skipped} 张，"
+        f"图片失败 {len(image_failures)} 张；输出目录 {output_dir}"
+    )
+    for failure in image_failures:
+        print(f"图片下载失败：{failure}", file=sys.stderr)
+    return 1 if image_failures else 0
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="采集公众号历史文章，输出 Markdown 与 CSV")
-    parser.add_argument("--account", required=True, help="公众号名称，例如：人民日报")
+    parser = argparse.ArgumentParser(description="采集公众号文章、本地静态图片、互动数据和匿名一级评论")
+    parser.add_argument("--account", required=True, help="公众号名称，例如：广州楼市发布")
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR), help="输出目录，默认 ./output/wechat-articles")
-    parser.add_argument("--start-date", default="", help="只采集此日期之后，格式 YYYY-MM-DD；留空采集全部")
+    parser.add_argument("--start-date", default="", help="只采集此日期及之后的文章，格式 YYYY-MM-DD")
     parser.add_argument("--limit", type=int, default=0, help="最多采集文章数，0 表示不限制")
-    parser.add_argument("--max-pages", type=int, default=0, help="最多翻页数，0 表示按接口 total_page 采完")
-    parser.add_argument("--delay", type=float, default=0.6, help="接口调用间隔秒数")
-    parser.add_argument("--timeout", type=int, default=30, help="HTTP 超时秒数")
-    parser.add_argument("--no-metrics", dest="collect_metrics", action="store_false", help="不采集阅读/点赞等互动数据")
-    parser.add_argument("--include-deleted", action="store_true", help="包含已删除文章")
-    parser.add_argument("--api-key", default="", help="大加啦/极致了 API key，建议用环境变量 DAJIALA_API_KEY")
-    parser.add_argument("--verifycode", default="", help="附加码，建议用环境变量 DAJIALA_VERIFY_CODE")
-    parser.add_argument("--cookie", default="", help="必要时传大加啦 Cookie，建议用环境变量 DAJIALA_COOKIE")
+    parser.add_argument("--max-pages", type=int, default=0, help="最多获取列表页数，0 表示采完")
+    parser.add_argument("--delay", type=float, default=0.6, help="文章之间的接口调用间隔秒数")
+    parser.add_argument("--timeout", type=int, default=30, help="接口和图片下载超时秒数")
+    parser.add_argument("--include-deleted", action="store_true", help="包含列表中标记为已删除的文章")
+    parser.add_argument("--api-key", default="", help="极致了 API key，建议使用环境变量 DAJIALA_API_KEY")
+    parser.add_argument("--verifycode", default="", help="附加码，建议使用环境变量 DAJIALA_VERIFY_CODE")
+    parser.add_argument("--cookie", default="", help="必要时传极致了 Cookie，建议使用环境变量 DAJIALA_COOKIE")
     parser.add_argument("--env-file", default="", help="读取指定 .env 文件；优先级高于当前目录 .env")
-    parser.set_defaults(collect_metrics=True)
     return parser
 
 

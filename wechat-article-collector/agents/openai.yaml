@@ -1,4 +1,4 @@
 interface:
   display_name: "微信公众号文章采集"
-  short_description: "采集公众号文章正文、封面和互动数据，输出 Markdown 与 CSV。"
-  default_prompt: "采集指定公众号文章，并保存到我指定的输出目录"
+  short_description: "本地保存公众号正文、静态图片、互动数据和匿名一级评论"
+  default_prompt: "Use $wechat-article-collector to采集指定公众号文章并保存到本地目录。"

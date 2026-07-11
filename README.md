@@ -149,11 +149,15 @@ brew install imagemagick
 
 ## API key 配置
 
-复制 `.env.example` 为 `.env`，再填入自己的 key：
+普通用户不需要理解或手动配置环境变量。安装 Skill 后直接对 Agent 说：
 
-```bash
-cp .env.example .env
+```text
+帮我配置微信公众号文章采集。我可以提供极致了 API Key 和附加码。
 ```
+
+Agent 会询问 API Key 和附加码，并把它们保存到只在本机使用、不会提交到 GitHub 的 `.env`。
+
+熟悉命令行的用户也可以复制 `.env.example` 为 `.env` 后自行填写。
 
 常用变量：
 
@@ -177,7 +181,8 @@ cp .env.example .env
 
 1. 注册或登录大加啦/极致了接口页：`https://www.dajiala.com/main/interface?actnav=0`
 2. 拿到 API key。
-3. 在 `.env` 中填写 `DAJIALA_API_KEY`。
+3. 把 API Key 和附加码提供给 Agent；没有附加码就告诉 Agent“没有”。
+4. Agent 自动保存本地配置并确认它不会被 Git 提交。
 
 对 Agent 说：
 
