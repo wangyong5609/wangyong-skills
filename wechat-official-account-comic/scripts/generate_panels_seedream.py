@@ -2,11 +2,13 @@
 import argparse
 import base64
 import json
+import mimetypes
 import os
 import sys
 import time
 import urllib.error
 import urllib.request
+import uuid
 from pathlib import Path
 
 
@@ -17,6 +19,10 @@ DEFAULT_AGNES_SIZE = "1024x768"
 DEFAULT_SEEDREAM_API_URL = "https://ark.cn-beijing.volces.com/api/v3/images/generations"
 DEFAULT_SEEDREAM_MODEL = "doubao-seedream-4-5-251128"
 DEFAULT_SEEDREAM_SIZE = "2304x1728"
+DEFAULT_BREAKOUT_API_URL = "https://breakout.wenwen-ai.com/v1/images/generations"
+DEFAULT_BREAKOUT_EDIT_API_URL = "https://breakout.wenwen-ai.com/v1/images/edits"
+DEFAULT_BREAKOUT_MODEL = "gpt-image-2"
+DEFAULT_BREAKOUT_SIZE = "1536x1024"
 DEFAULT_API_URL = DEFAULT_SEEDREAM_API_URL
 DEFAULT_MODEL = DEFAULT_SEEDREAM_MODEL
 DEFAULT_ENV_FILES = (
@@ -65,6 +71,9 @@ PROVIDER_ALIASES = {
     "ark": "seedream",
     "volcengine": "seedream",
     "volcengine-ark": "seedream",
+    "breakout": "breakout",
+    "wenwen": "breakout",
+    "breakoutapi": "breakout",
 }
 
 
@@ -145,6 +154,16 @@ def resolve_provider_config(provider, model="", api_url="", api_key_env=""):
             "model": model or os.environ.get("ARK_IMAGE_MODEL") or DEFAULT_SEEDREAM_MODEL,
             "api_key_envs": unique_names([api_key_env, "DOUBAO_API_KEY", "ARK_API_KEY"]),
             "default_size": DEFAULT_SEEDREAM_SIZE,
+        }
+    if provider_name == "breakout":
+        return {
+            "provider": "breakout",
+            "label": "Breakout API GPT Image",
+            "api_url": api_url or os.environ.get("BREAKOUT_API_URL") or DEFAULT_BREAKOUT_API_URL,
+            "edit_api_url": os.environ.get("BREAKOUT_EDIT_API_URL") or DEFAULT_BREAKOUT_EDIT_API_URL,
+            "model": model or os.environ.get("BREAKOUT_IMAGE_MODEL") or DEFAULT_BREAKOUT_MODEL,
+            "api_key_envs": unique_names([api_key_env, "BREAKOUT_API_KEY"]),
+            "default_size": DEFAULT_BREAKOUT_SIZE,
         }
     raise ValueError(f"Unsupported image provider: {provider}")
 
@@ -290,6 +309,30 @@ def build_full_prompt(style, prompt, style_prompt, text_policy="wordless"):
     )
 
 
+def build_image_edit_prompt(prompt, text_policy="wordless"):
+    """Build a compact prompt for reference-image editing.
+
+    Reference images already carry the visual style and can contain article text.
+    Do not reuse the text-to-image wrapper here: its wordless requirement would
+    contradict a request to preserve an existing cover or caption.
+    """
+    if uses_model_rendered_text(text_policy):
+        text_instruction = (
+            "Preserve readable text already present in the primary reference image unless "
+            "the edit request explicitly changes it. Do not add unrelated text."
+        )
+    else:
+        text_instruction = (
+            "Preserve readable text already present in the primary reference image when the "
+            "edit request calls for it. Do not add unrelated text, logos, or watermarks."
+        )
+    return (
+        "Use the supplied reference images as the source of identity, composition, and visual style. "
+        "Create one polished final image that follows this edit request. "
+        f"{text_instruction}\n\nEdit request: {prompt}"
+    )
+
+
 def parse_api_error(detail):
     try:
         payload = json.loads(detail)
@@ -338,6 +381,13 @@ def build_failure_guidance(code, message, provider):
             "\n请检查 AGNES_API_KEY/GNES_API_KEY、账号状态、网络、模型名、图片尺寸或请求参数后再重试。"
             "\n不会自动改用本地矢量图、占位图或其他 provider 生成最终长图。"
         )
+    if provider_name == "breakout":
+        return (
+            "\n\n生成已停止：Breakout API 图片调用失败。"
+            "\n请检查 BREAKOUT_API_KEY、模型可用性、账户余额、图片字段或服务端请求 ID 后再重试。"
+            "\n图生图使用 multipart/form-data；每张参考图都必须作为同名 image 文件字段上传。"
+            "\n不会自动改用本地矢量图、占位图或其他 provider 生成最终长图。"
+        )
     return (
         "\n\n生成已停止：Seedream/即梦 API 调用失败。"
         "\n请根据上面的错误码检查 API Key、模型开通状态、账户额度、网络或请求参数后再重试。"
@@ -372,18 +422,113 @@ def build_api_payload(provider, model, prompt, size, response_format, watermark)
             "watermark": watermark,
             "sequential_image_generation": "disabled",
         }
+    if provider_name == "breakout":
+        return {
+            "model": model,
+            "prompt": prompt,
+            "size": size,
+        }
     raise ValueError(f"Unsupported image provider: {provider}")
 
 
-def request_image(provider, api_url, api_key, model, prompt, size, response_format, timeout, watermark):
+def encode_multipart_form(fields, file_field, file_paths):
+    boundary = f"----wechatComic{uuid.uuid4().hex}"
+    body = bytearray()
+
+    def add_text(name, value):
+        body.extend(f"--{boundary}\r\n".encode("utf-8"))
+        body.extend(f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode("utf-8"))
+        body.extend(str(value).encode("utf-8"))
+        body.extend(b"\r\n")
+
+    for name, value in fields.items():
+        if value is not None and value != "":
+            add_text(name, value)
+
+    for raw_path in file_paths:
+        path = Path(raw_path).expanduser()
+        if not path.is_file():
+            raise ValueError(f"Reference image not found: {path}")
+        content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+        body.extend(f"--{boundary}\r\n".encode("utf-8"))
+        body.extend(
+            f'Content-Disposition: form-data; name="{file_field}"; filename="{path.name}"\r\n'.encode("utf-8")
+        )
+        body.extend(f"Content-Type: {content_type}\r\n\r\n".encode("utf-8"))
+        body.extend(path.read_bytes())
+        body.extend(b"\r\n")
+
+    body.extend(f"--{boundary}--\r\n".encode("utf-8"))
+    return bytes(body), f"multipart/form-data; boundary={boundary}"
+
+
+def provider_label(provider):
     provider_name = normalize_provider(provider)
-    payload = build_api_payload(provider_name, model, prompt, size, response_format, watermark)
-    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    if provider_name == "agnes":
+        return "Agnes Image API"
+    if provider_name == "seedream":
+        return "Seedream API"
+    if provider_name == "breakout":
+        return "Breakout API"
+    return "Image API"
+
+
+RETRYABLE_HTTP_STATUS_CODES = {429, 502, 503, 504}
+
+
+class ImageRequestError(RuntimeError):
+    def __init__(self, message, status_code=None, request_id=""):
+        super().__init__(message)
+        self.status_code = status_code
+        self.request_id = request_id
+
+    @property
+    def retryable(self):
+        return self.status_code in RETRYABLE_HTTP_STATUS_CODES
+
+
+def get_request_id(headers):
+    if not headers:
+        return ""
+    for name in ("x-request-id", "x-oneapi-request-id", "request-id"):
+        value = headers.get(name)
+        if value:
+            return str(value)
+    return ""
+
+
+def request_image(
+    provider,
+    api_url,
+    api_key,
+    model,
+    prompt,
+    size,
+    response_format,
+    timeout,
+    watermark,
+    reference_images=(),
+    quality="auto",
+    edit_api_url="",
+):
+    provider_name = normalize_provider(provider)
+    if provider_name == "breakout" and reference_images:
+        body, content_type = encode_multipart_form(
+            {"model": model, "prompt": prompt, "quality": quality},
+            "image",
+            reference_images,
+        )
+        request_url = edit_api_url or DEFAULT_BREAKOUT_EDIT_API_URL
+    else:
+        payload = build_api_payload(provider_name, model, prompt, size, response_format, watermark)
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        content_type = "application/json"
+        request_url = api_url
     request = urllib.request.Request(
-        api_url,
+        request_url,
         data=body,
         headers={
-            "Content-Type": "application/json",
+            "Content-Type": content_type,
             "Authorization": f"Bearer {api_key}",
         },
         method="POST",
@@ -396,8 +541,34 @@ def request_image(provider, api_url, api_key, model, prompt, size, response_form
         error_code, message = parse_api_error(detail)
         guidance = build_failure_guidance(error_code, message, provider_name)
         label = f"{error_code}: {message}" if error_code else detail
-        provider_label = "Agnes Image API" if provider_name == "agnes" else "Seedream API"
-        raise RuntimeError(f"{provider_label} error {exc.code}: {label}{guidance}") from exc
+        request_id = get_request_id(exc.headers)
+        request_id_detail = f"\nServer request ID: {request_id}" if request_id else ""
+        raise ImageRequestError(
+            f"{provider_label(provider_name)} error {exc.code}: {label}{request_id_detail}{guidance}",
+            status_code=exc.code,
+            request_id=request_id,
+        ) from exc
+
+
+def request_image_with_retries(*args, retries=0, retry_delay=30.0, **kwargs):
+    """Retry only explicitly requested transient HTTP failures.
+
+    A gateway timeout can occur after the upstream service started work, so the
+    CLI defaults to zero retries to avoid an unrequested duplicate generation.
+    """
+    for attempt in range(retries + 1):
+        try:
+            return request_image(*args, **kwargs)
+        except ImageRequestError as exc:
+            if not exc.retryable or attempt >= retries:
+                raise
+            print(
+                f"Transient HTTP {exc.status_code}; retrying in {retry_delay:g}s "
+                f"({attempt + 1}/{retries}).",
+                file=sys.stderr,
+                flush=True,
+            )
+            time.sleep(retry_delay)
 
 
 def save_image(item, out_path, timeout):
@@ -421,10 +592,10 @@ def main():
         load_env_file(Path(pre_args.env_file).expanduser(), override=True)
 
     parser = argparse.ArgumentParser(
-        description="Generate WeChat comic panel images with Agnes Image (default) or Volcengine Ark Seedream.",
+        description="Generate WeChat comic panel images with Agnes Image (default), Volcengine Ark Seedream, or Breakout API.",
         parents=[pre_parser],
     )
-    parser.add_argument("--provider", default=os.environ.get("COMIC_IMAGE_PROVIDER", DEFAULT_PROVIDER), help="Image provider: agnes/gnes (default) or seedream/doubao/ark")
+    parser.add_argument("--provider", default=os.environ.get("COMIC_IMAGE_PROVIDER", DEFAULT_PROVIDER), help="Image provider: agnes/gnes (default), seedream/doubao/ark, or breakout/wenwen")
     parser.add_argument("--prompts", required=True, help="JSON or text file containing panel prompts")
     parser.add_argument("--out-dir", required=True, help="Output directory for panel PNG files")
     parser.add_argument("--style", default="", help='Style name, alias, or JSON profile stem in --styles-dir; omit to use the profile marked "default": true')
@@ -433,9 +604,13 @@ def main():
     parser.add_argument("--model", default="", help="Override provider default model")
     parser.add_argument("--api-url", default="", help="Override provider default API URL")
     parser.add_argument("--api-key-env", default="", help="Environment variable containing the selected provider API key")
-    parser.add_argument("--size", default="", help="Output size. Agnes default: 1024x768. Seedream default: 2304x1728")
+    parser.add_argument("--size", default="", help="Output size. Agnes default: 1024x768. Seedream default: 2304x1728. Breakout default: 1536x1024")
     parser.add_argument("--response-format", default="b64_json", choices=["b64_json", "url"])
+    parser.add_argument("--reference-image", action="append", default=[], help="Reference image for Breakout image edits; repeat this option to upload multiple images as the image field")
+    parser.add_argument("--quality", default="auto", choices=["auto", "low", "medium", "high"], help="Breakout image-edit quality; ignored by other providers")
     parser.add_argument("--timeout", type=int, default=300)
+    parser.add_argument("--retries", type=int, default=0, choices=range(0, 4), help="Explicit retries for HTTP 429/502/503/504; default: 0 to avoid duplicate billed generations")
+    parser.add_argument("--retry-delay", type=float, default=30.0, help="Seconds to wait before an explicit retry (default: 30)")
     parser.add_argument("--sleep", type=float, default=0.0, help="Seconds to wait between requests")
     parser.add_argument("--watermark", action="store_true", help="Ask Seedream API to add watermark; ignored by Agnes")
     args = parser.parse_args()
@@ -445,6 +620,14 @@ def main():
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
+    if args.reference_image and provider_config["provider"] != "breakout":
+        print("--reference-image is only supported with --provider breakout.", file=sys.stderr)
+        return 2
+    for raw_path in args.reference_image:
+        path = Path(raw_path).expanduser()
+        if not path.is_file():
+            print(f"Reference image not found: {path}", file=sys.stderr)
+            return 2
     args.size = args.size or provider_config["default_size"]
 
     api_key, api_key_env = resolve_api_key(provider_config["api_key_envs"])
@@ -476,7 +659,11 @@ def main():
     manifest = {
         "provider": provider_config["provider"],
         "provider_label": provider_config["label"],
-        "api_url": provider_config["api_url"],
+        "api_url": (
+            provider_config.get("edit_api_url", DEFAULT_BREAKOUT_EDIT_API_URL)
+            if args.reference_image
+            else provider_config["api_url"]
+        ),
         "model": provider_config["model"],
         "style": style_name,
         "requested_style": args.style,
@@ -486,17 +673,25 @@ def main():
         "response_format": args.response_format,
         "watermark": args.watermark,
         "api_key_env": api_key_env,
+        "generation_mode": "image-edit" if args.reference_image else "text-to-image",
+        "reference_images": [str(Path(path).expanduser()) for path in args.reference_image],
+        "quality": args.quality if args.reference_image else "",
+        "retries": args.retries,
+        "retry_delay": args.retry_delay if args.retries else 0,
         "panels": [],
     }
 
     for index, prompt in enumerate(prompts, start=1):
         render_text_in_model = uses_model_rendered_text(text_policy)
         clean_prompt = sanitize_prompt(prompt, preserve_quotes=render_text_in_model)
-        full_prompt = build_full_prompt(style_name, clean_prompt, style_prompt, text_policy)
+        if args.reference_image:
+            full_prompt = build_image_edit_prompt(clean_prompt, text_policy)
+        else:
+            full_prompt = build_full_prompt(style_name, clean_prompt, style_prompt, text_policy)
         out_path = out_dir / f"panel-{index:02d}.png"
         print(f"[{index}/{len(prompts)}] generating {out_path}", flush=True)
         try:
-            response = request_image(
+            response = request_image_with_retries(
                 provider_config["provider"],
                 provider_config["api_url"],
                 api_key,
@@ -506,6 +701,11 @@ def main():
                 args.response_format,
                 args.timeout,
                 args.watermark,
+                args.reference_image,
+                args.quality,
+                provider_config.get("edit_api_url", ""),
+                retries=args.retries,
+                retry_delay=args.retry_delay,
             )
         except RuntimeError as exc:
             print(str(exc), file=sys.stderr)
