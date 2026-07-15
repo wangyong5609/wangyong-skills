@@ -1,5 +1,6 @@
 import importlib.util
 import os
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -118,6 +119,16 @@ class PromptWrappingTest(unittest.TestCase):
         self.assertIn("白底水彩人物小品", full_prompt)
         self.assertIn('"当我累了"', full_prompt)
 
+    def test_image_edit_prompt_preserves_reference_text_without_wordless_wrapper(self):
+        prompt = "把人物加入封面右侧，保留封面的核心中文标题"
+
+        edit_prompt = self.module.build_image_edit_prompt(prompt, "wordless")
+
+        self.assertIn("Preserve readable text", edit_prompt)
+        self.assertIn(prompt, edit_prompt)
+        self.assertNotIn("Create a wordless illustration only", edit_prompt)
+        self.assertNotIn("Style and constraints", edit_prompt)
+
     def test_xiaolin_life_satire_profile_alias_resolves(self):
         styles_dir = SCRIPT_PATH.parents[1] / "styles"
 
@@ -193,6 +204,24 @@ class ImageProviderTest(unittest.TestCase):
         self.assertEqual(api_key, "gnes-key")
         self.assertEqual(api_key_env, "GNES_API_KEY")
 
+    def test_breakout_provider_uses_verified_defaults_and_key_name(self):
+        config = self.module.resolve_provider_config("breakout", "", "", "")
+
+        self.assertEqual(config["provider"], "breakout")
+        self.assertEqual(config["api_url"], self.module.DEFAULT_BREAKOUT_API_URL)
+        self.assertEqual(config["edit_api_url"], self.module.DEFAULT_BREAKOUT_EDIT_API_URL)
+        self.assertEqual(config["model"], "gpt-image-2")
+        self.assertEqual(config["api_key_envs"], ["BREAKOUT_API_KEY"])
+
+    def test_breakout_api_key_is_isolated_from_other_provider_keys(self):
+        config = self.module.resolve_provider_config("breakout", "", "", "")
+
+        with patch.dict(os.environ, {"BREAKOUT_API_KEY": "breakout-key", "AGNES_API_KEY": "agnes-key"}, clear=True):
+            api_key, api_key_env = self.module.resolve_api_key(config["api_key_envs"])
+
+        self.assertEqual(api_key, "breakout-key")
+        self.assertEqual(api_key_env, "BREAKOUT_API_KEY")
+
     def test_agnes_payload_uses_extra_body_for_response_format(self):
         payload = self.module.build_api_payload(
             "agnes",
@@ -221,6 +250,70 @@ class ImageProviderTest(unittest.TestCase):
         self.assertEqual(payload["response_format"], "b64_json")
         self.assertTrue(payload["watermark"])
         self.assertEqual(payload["sequential_image_generation"], "disabled")
+
+    def test_breakout_text_to_image_payload_uses_native_images_schema(self):
+        payload = self.module.build_api_payload(
+            "breakout",
+            "gpt-image-2",
+            "画一张公众号漫画分镜",
+            "1536x1024",
+            "b64_json",
+            False,
+        )
+
+        self.assertEqual(
+            payload,
+            {
+                "model": "gpt-image-2",
+                "prompt": "画一张公众号漫画分镜",
+                "size": "1536x1024",
+            },
+        )
+
+    def test_breakout_image_edit_encodes_repeated_image_file_parts(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            first = Path(tmp_dir) / "cover.png"
+            second = Path(tmp_dir) / "person.png"
+            first.write_bytes(b"cover-bytes")
+            second.write_bytes(b"person-bytes")
+
+            body, content_type = self.module.encode_multipart_form(
+                {"model": "gpt-image-2", "prompt": "把人物加到封面", "quality": "low"},
+                "image",
+                [first, second],
+            )
+
+        self.assertTrue(content_type.startswith("multipart/form-data; boundary="))
+        self.assertEqual(body.count(b'name="image"; filename="'), 2)
+        self.assertIn(b'filename="cover.png"', body)
+        self.assertIn(b'filename="person.png"', body)
+        self.assertIn(b"cover-bytes", body)
+        self.assertIn(b"person-bytes", body)
+
+    def test_gateway_timeouts_are_retryable_but_other_client_errors_are_not(self):
+        self.assertTrue(self.module.ImageRequestError("timeout", 504).retryable)
+        self.assertTrue(self.module.ImageRequestError("overloaded", 503).retryable)
+        self.assertFalse(self.module.ImageRequestError("bad request", 400).retryable)
+
+    def test_explicit_retry_retries_a_gateway_timeout_once(self):
+        expected = {"data": [{"b64_json": "abc"}]}
+
+        with patch.object(
+            self.module,
+            "request_image",
+            side_effect=[self.module.ImageRequestError("timeout", 504), expected],
+        ) as request_image, patch.object(self.module.time, "sleep") as sleep:
+            result = self.module.request_image_with_retries("breakout", retries=1, retry_delay=12)
+
+        self.assertEqual(result, expected)
+        self.assertEqual(request_image.call_count, 2)
+        sleep.assert_called_once_with(12)
+
+    def test_request_id_prefers_standard_header(self):
+        self.assertEqual(
+            self.module.get_request_id({"x-oneapi-request-id": "fallback", "x-request-id": "primary"}),
+            "primary",
+        )
 
 
 if __name__ == "__main__":

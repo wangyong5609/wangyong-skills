@@ -106,6 +106,6 @@ python3 wechat-official-account-comic/scripts/generate_panels_seedream.py \
   --style-profile wechat-official-account-comic/styles/soft-workplace-healing.json
 ```
 
-Use `AGNES_API_KEY` for the default Agnes path. To use Volcengine Ark/Doubao Seedream instead, pass `--provider seedream` and provide `DOUBAO_API_KEY` or `ARK_API_KEY`.
+Use `AGNES_API_KEY` for the default Agnes path. To use Volcengine Ark/Doubao Seedream instead, pass `--provider seedream` and provide `DOUBAO_API_KEY` or `ARK_API_KEY`. To use Breakout GPT Image, pass `--provider breakout` and provide `BREAKOUT_API_KEY`; use repeated `--reference-image` only when the smoke test intentionally needs image editing or character continuity.
 
 For `model-rendered` profiles, wrap every intended in-panel Chinese string in quotation marks in the panel prompt. If the style combines illustration and caption into one source image, quote each caption line and describe its placement and lettering style. The first smoke test must verify that the model produced one source image, copied the quoted Chinese accurately, and did not add QR codes, account names, signatures, watermarks, English, or unquoted text. For `wordless` profiles, keep all Chinese article text in `article.json` and let the layout script render it.
