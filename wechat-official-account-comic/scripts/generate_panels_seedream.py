@@ -423,6 +423,8 @@ def build_api_payload(provider, model, prompt, size, response_format, watermark)
             "sequential_image_generation": "disabled",
         }
     if provider_name == "breakout":
+        # Breakout returns image URLs by default; explicitly passing response_format
+        # has caused inconsistent URL/download behavior, so we omit it.
         return {
             "model": model,
             "prompt": prompt,
@@ -571,14 +573,27 @@ def request_image_with_retries(*args, retries=0, retry_delay=30.0, **kwargs):
             time.sleep(retry_delay)
 
 
-def save_image(item, out_path, timeout):
+def save_image(item, out_path, timeout, api_key=""):
     if item.get("b64_json"):
         out_path.write_bytes(base64.b64decode(item["b64_json"]))
         return
     if item.get("url"):
-        with urllib.request.urlopen(item["url"], timeout=timeout) as response:
-            out_path.write_bytes(response.read())
-        return
+        url = item["url"]
+        # Try with auth header first, then without (some returned URLs are
+        # pre-signed and reject additional Authorization headers).
+        for use_auth in (True, False):
+            headers = {}
+            if use_auth and api_key:
+                headers["Authorization"] = f"Bearer {api_key}"
+            try:
+                request = urllib.request.Request(url, headers=headers)
+                with urllib.request.urlopen(request, timeout=timeout) as response:
+                    out_path.write_bytes(response.read())
+                    return
+            except urllib.error.HTTPError as exc:
+                if exc.code == 403 and use_auth:
+                    continue
+                raise
     raise RuntimeError(f"No image payload in response item: {item.keys()}")
 
 
@@ -713,7 +728,7 @@ def main():
         data = response.get("data") or []
         if not data:
             raise RuntimeError(f"No image data returned for panel {index}: {response}")
-        save_image(data[0], out_path, args.timeout)
+        save_image(data[0], out_path, args.timeout, api_key)
         manifest["panels"].append({"file": out_path.name, "prompt": clean_prompt})
         if args.sleep and index < len(prompts):
             time.sleep(args.sleep)
