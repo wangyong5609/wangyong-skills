@@ -2,6 +2,17 @@
 
 Use these presets to produce original WeChat comic long images with repeatable visual language. Match broad format and reading experience only; never copy account identity, author signature, fixed characters, or branded phrases.
 
+## Contents
+
+- 暖白手绘漫画
+- 蓝栏柔彩漫画
+- 绿底粗线漫画
+- 小林诗意治愈
+- 小林生活讽刺
+- 小林奇想涂鸦
+- 小林三风格公共生产规则
+- Review checklist
+
 For styles trained from new reference screenshots, read `style-training-guide.md`, create a profile from `templates/style-profile-template.json`, and save it as `styles/<style-id>.json`. Add only a concise entry here after the style has a reusable prompt, layout notes, text policy, and quality gate.
 
 ## 暖白手绘漫画

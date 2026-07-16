@@ -1,9 +1,14 @@
+import base64
 import importlib.util
+import json
 import os
+import sys
 import tempfile
+import threading
 import unittest
+import urllib.error
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 
 SCRIPT_PATH = Path(__file__).with_name("generate_panels_seedream.py")
@@ -213,6 +218,55 @@ class ImageProviderTest(unittest.TestCase):
         self.assertEqual(config["model"], "gpt-image-2")
         self.assertEqual(config["api_key_envs"], ["BREAKOUT_API_KEY"])
 
+    def test_pojuwenwen_name_and_default_concurrency_are_supported(self):
+        config = self.module.resolve_provider_config("破局问问", "", "", "")
+
+        self.assertEqual(config["provider"], "breakout")
+        self.assertEqual(config["label"], "破局问问 GPT Image")
+        self.assertEqual(self.module.resolve_worker_count("破局问问"), 2)
+        self.assertEqual(self.module.resolve_worker_count("pojuwenwen"), 2)
+        self.assertEqual(self.module.resolve_worker_count("agnes"), 1)
+        self.assertEqual(self.module.resolve_worker_count("破局问问", 3), 3)
+
+    def test_bounded_jobs_run_at_most_two_panels_concurrently(self):
+        lock = threading.Lock()
+        state = {"active": 0, "peak": 0}
+
+        def worker(job):
+            with lock:
+                state["active"] += 1
+                state["peak"] = max(state["peak"], state["active"])
+            self.module.time.sleep(0.02)
+            with lock:
+                state["active"] -= 1
+            return job
+
+        results, failures, submitted = self.module.run_bounded_jobs(range(4), 2, worker)
+
+        self.assertEqual(sorted(results), [0, 1, 2, 3])
+        self.assertEqual(failures, [])
+        self.assertEqual(submitted, 4)
+        self.assertEqual(state["peak"], 2)
+
+    def test_bounded_jobs_stop_submitting_after_first_failure(self):
+        second_started = threading.Event()
+
+        def worker(job):
+            if job == 1:
+                second_started.wait(timeout=1)
+                raise RuntimeError("panel failed")
+            if job == 2:
+                second_started.set()
+                self.module.time.sleep(0.05)
+            return job
+
+        results, failures, submitted = self.module.run_bounded_jobs([1, 2, 3, 4], 2, worker)
+
+        self.assertEqual(results, [2])
+        self.assertEqual(len(failures), 1)
+        self.assertEqual(failures[0][0], 1)
+        self.assertEqual(submitted, 2)
+
     def test_breakout_api_key_is_isolated_from_other_provider_keys(self):
         config = self.module.resolve_provider_config("breakout", "", "", "")
 
@@ -314,6 +368,195 @@ class ImageProviderTest(unittest.TestCase):
             self.module.get_request_id({"x-oneapi-request-id": "fallback", "x-request-id": "primary"}),
             "primary",
         )
+
+    def test_download_host_matching_allows_only_api_host_and_subdomains(self):
+        self.assertTrue(
+            self.module.download_hosts_match(
+                "https://breakout.wenwen-ai.com/files/panel.png",
+                "https://breakout.wenwen-ai.com/v1/images/generations",
+            )
+        )
+        self.assertTrue(
+            self.module.download_hosts_match(
+                "https://img.breakout.wenwen-ai.com/files/panel.png",
+                "https://breakout.wenwen-ai.com/v1/images/generations",
+            )
+        )
+        self.assertFalse(
+            self.module.download_hosts_match(
+                "https://example-cdn.invalid/files/panel.png",
+                "https://breakout.wenwen-ai.com/v1/images/generations",
+            )
+        )
+
+    def test_same_host_download_retries_403_with_authorization(self):
+        first_error = urllib.error.HTTPError(
+            "https://breakout.wenwen-ai.com/files/panel.png",
+            403,
+            "Forbidden",
+            None,
+            None,
+        )
+        self.addCleanup(first_error.close)
+        response = MagicMock()
+        response.__enter__.return_value.read.return_value = b"image-bytes"
+        opener = MagicMock()
+        opener.open.side_effect = [first_error, response]
+
+        with patch.object(self.module.urllib.request, "build_opener", return_value=opener):
+            result = self.module.download_image_url(
+                "https://breakout.wenwen-ai.com/files/panel.png",
+                30,
+                "secret-key",
+                "https://breakout.wenwen-ai.com/v1/images/generations",
+            )
+
+        self.assertEqual(result, b"image-bytes")
+        self.assertEqual(opener.open.call_count, 2)
+        first_request = opener.open.call_args_list[0].args[0]
+        second_request = opener.open.call_args_list[1].args[0]
+        self.assertIsNone(first_request.get_header("Authorization"))
+        self.assertEqual(second_request.get_header("Authorization"), "Bearer secret-key")
+        self.assertTrue(first_request.get_header("User-agent"))
+
+    def test_cross_host_download_never_forwards_api_key(self):
+        download_error = urllib.error.HTTPError(
+            "https://example-cdn.invalid/files/panel.png",
+            403,
+            "Forbidden",
+            None,
+            None,
+        )
+        self.addCleanup(download_error.close)
+        opener = MagicMock()
+        opener.open.side_effect = download_error
+        with patch.object(self.module.urllib.request, "build_opener", return_value=opener):
+            with self.assertRaises(self.module.ImageDownloadError) as caught:
+                self.module.download_image_url(
+                    "https://example-cdn.invalid/files/panel.png",
+                    30,
+                    "secret-key",
+                    "https://breakout.wenwen-ai.com/v1/images/generations",
+                )
+
+        self.assertEqual(opener.open.call_count, 1)
+        request = opener.open.call_args.args[0]
+        self.assertIsNone(request.get_header("Authorization"))
+        self.assertIn("API key was not forwarded", str(caught.exception))
+
+    def test_cross_host_redirect_strips_authorization(self):
+        handler = self.module.SafeDownloadRedirectHandler(
+            "https://breakout.wenwen-ai.com/v1/images/generations"
+        )
+        original = self.module.urllib.request.Request(
+            "https://breakout.wenwen-ai.com/files/panel.png",
+            headers={"Authorization": "Bearer secret-key"},
+        )
+
+        redirected = handler.redirect_request(
+            original,
+            None,
+            302,
+            "Found",
+            {},
+            "https://example-cdn.invalid/files/panel.png",
+        )
+
+        self.assertIsNotNone(redirected)
+        self.assertIsNone(redirected.get_header("Authorization"))
+
+    def test_pending_response_is_private_and_loadable(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            pending = Path(tmp_dir) / "panel-02-pending-response.json"
+            payload = {"data": [{"url": "https://example.invalid/panel.png"}]}
+
+            self.module.write_pending_response(pending, payload)
+            loaded, item = self.module.load_pending_response(pending)
+
+            self.assertEqual(loaded, payload)
+            self.assertEqual(item, payload["data"][0])
+            self.assertEqual(pending.stat().st_mode & 0o777, 0o600)
+
+    def test_main_recovers_pending_response_without_new_generation(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            prompts = root / "prompts.json"
+            out_dir = root / "panels"
+            out_dir.mkdir()
+            prompts.write_text(json.dumps({"prompts": ["draw one panel"]}), encoding="utf-8")
+            pending = out_dir / "panel-01-pending-response.json"
+            pending.write_text(
+                json.dumps({"data": [{"b64_json": base64.b64encode(b"image-bytes").decode("ascii")}]}),
+                encoding="utf-8",
+            )
+
+            argv = [
+                str(SCRIPT_PATH),
+                "--provider",
+                "breakout",
+                "--prompts",
+                str(prompts),
+                "--out-dir",
+                str(out_dir),
+                "--style",
+                "暖白手绘漫画",
+            ]
+            with patch.dict(os.environ, {"BREAKOUT_API_KEY": "test-key"}, clear=True), patch.object(
+                sys, "argv", argv
+            ), patch.object(self.module, "request_image_with_retries") as request_image:
+                exit_code = self.module.main()
+
+            self.assertEqual(exit_code, 0)
+            request_image.assert_not_called()
+            self.assertEqual((out_dir / "panel-01.png").read_bytes(), b"image-bytes")
+            self.assertFalse(pending.exists())
+
+    def test_main_uses_two_workers_and_records_timings_for_pojuwenwen(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            prompts = root / "prompts.json"
+            out_dir = root / "panels"
+            prompts.write_text(
+                json.dumps({"prompts": ["panel one", "panel two", "panel three", "panel four"]}),
+                encoding="utf-8",
+            )
+            lock = threading.Lock()
+            state = {"active": 0, "peak": 0}
+
+            def fake_request(*args, **kwargs):
+                with lock:
+                    state["active"] += 1
+                    state["peak"] = max(state["peak"], state["active"])
+                self.module.time.sleep(0.02)
+                with lock:
+                    state["active"] -= 1
+                return {"data": [{"b64_json": base64.b64encode(b"image-bytes").decode("ascii")}]}
+
+            argv = [
+                str(SCRIPT_PATH),
+                "--provider",
+                "破局问问",
+                "--prompts",
+                str(prompts),
+                "--out-dir",
+                str(out_dir),
+                "--style",
+                "暖白手绘漫画",
+            ]
+            with patch.dict(os.environ, {"BREAKOUT_API_KEY": "test-key"}, clear=True), patch.object(
+                sys, "argv", argv
+            ), patch.object(self.module, "request_image_with_retries", side_effect=fake_request):
+                exit_code = self.module.main()
+
+            manifest = json.loads((out_dir / "breakout-manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(state["peak"], 2)
+            self.assertEqual(manifest["provider_label"], "破局问问 GPT Image")
+            self.assertEqual(manifest["workers"], 2)
+            self.assertEqual(manifest["submitted_generations"], 4)
+            self.assertGreater(manifest["elapsed_seconds"], 0)
+            self.assertEqual([item["index"] for item in manifest["panels"]], [1, 2, 3, 4])
+            self.assertTrue(all(item["duration_seconds"] > 0 for item in manifest["panels"]))
 
 
 if __name__ == "__main__":

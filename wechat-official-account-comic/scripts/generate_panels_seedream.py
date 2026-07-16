@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 import argparse
 import base64
+import getpass
 import json
 import mimetypes
 import os
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
 
 
@@ -23,6 +26,11 @@ DEFAULT_BREAKOUT_API_URL = "https://breakout.wenwen-ai.com/v1/images/generations
 DEFAULT_BREAKOUT_EDIT_API_URL = "https://breakout.wenwen-ai.com/v1/images/edits"
 DEFAULT_BREAKOUT_MODEL = "gpt-image-2"
 DEFAULT_BREAKOUT_SIZE = "1536x1024"
+DEFAULT_PROVIDER_WORKERS = {
+    "agnes": 1,
+    "seedream": 1,
+    "breakout": 2,
+}
 DEFAULT_API_URL = DEFAULT_SEEDREAM_API_URL
 DEFAULT_MODEL = DEFAULT_SEEDREAM_MODEL
 DEFAULT_ENV_FILES = (
@@ -74,6 +82,8 @@ PROVIDER_ALIASES = {
     "breakout": "breakout",
     "wenwen": "breakout",
     "breakoutapi": "breakout",
+    "pojuwenwen": "breakout",
+    "破局问问": "breakout",
 }
 
 
@@ -158,7 +168,7 @@ def resolve_provider_config(provider, model="", api_url="", api_key_env=""):
     if provider_name == "breakout":
         return {
             "provider": "breakout",
-            "label": "Breakout API GPT Image",
+            "label": "破局问问 GPT Image",
             "api_url": api_url or os.environ.get("BREAKOUT_API_URL") or DEFAULT_BREAKOUT_API_URL,
             "edit_api_url": os.environ.get("BREAKOUT_EDIT_API_URL") or DEFAULT_BREAKOUT_EDIT_API_URL,
             "model": model or os.environ.get("BREAKOUT_IMAGE_MODEL") or DEFAULT_BREAKOUT_MODEL,
@@ -383,7 +393,7 @@ def build_failure_guidance(code, message, provider):
         )
     if provider_name == "breakout":
         return (
-            "\n\n生成已停止：Breakout API 图片调用失败。"
+            "\n\n生成已停止：破局问问 API 图片调用失败。"
             "\n请检查 BREAKOUT_API_KEY、模型可用性、账户余额、图片字段或服务端请求 ID 后再重试。"
             "\n图生图使用 multipart/form-data；每张参考图都必须作为同名 image 文件字段上传。"
             "\n不会自动改用本地矢量图、占位图或其他 provider 生成最终长图。"
@@ -423,7 +433,7 @@ def build_api_payload(provider, model, prompt, size, response_format, watermark)
             "sequential_image_generation": "disabled",
         }
     if provider_name == "breakout":
-        # Breakout returns image URLs by default; explicitly passing response_format
+        # 破局问问 returns image URLs by default; explicitly passing response_format
         # has caused inconsistent URL/download behavior, so we omit it.
         return {
             "model": model,
@@ -471,7 +481,7 @@ def provider_label(provider):
     if provider_name == "seedream":
         return "Seedream API"
     if provider_name == "breakout":
-        return "Breakout API"
+        return "破局问问 API"
     return "Image API"
 
 
@@ -487,6 +497,13 @@ class ImageRequestError(RuntimeError):
     @property
     def retryable(self):
         return self.status_code in RETRYABLE_HTTP_STATUS_CODES
+
+
+class ImageDownloadError(RuntimeError):
+    def __init__(self, message, status_code=0, image_host=""):
+        super().__init__(message)
+        self.status_code = status_code
+        self.image_host = image_host
 
 
 def get_request_id(headers):
@@ -573,28 +590,234 @@ def request_image_with_retries(*args, retries=0, retry_delay=30.0, **kwargs):
             time.sleep(retry_delay)
 
 
-def save_image(item, out_path, timeout, api_key=""):
+def download_hosts_match(image_url, api_url):
+    image_host = (urllib.parse.urlparse(image_url).hostname or "").lower()
+    api_host = (urllib.parse.urlparse(api_url).hostname or "").lower()
+    if not image_host or not api_host:
+        return False
+    return image_host == api_host or image_host.endswith(f".{api_host}")
+
+
+class SafeDownloadRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def __init__(self, api_url):
+        super().__init__()
+        self.api_url = api_url
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        redirected = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if redirected and not download_hosts_match(newurl, self.api_url):
+            redirected.remove_header("Authorization")
+        return redirected
+
+
+def download_image_url(image_url, timeout, api_key="", api_url=""):
+    parsed_api_url = urllib.parse.urlparse(api_url)
+    referer = f"{parsed_api_url.scheme}://{parsed_api_url.netloc}/" if parsed_api_url.netloc else ""
+    browser_headers = {
+        "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+        "User-Agent": (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0 Safari/537.36"
+        ),
+    }
+    if referer:
+        browser_headers["Referer"] = referer
+
+    attempts = [browser_headers]
+    if api_key and download_hosts_match(image_url, api_url):
+        attempts.append({**browser_headers, "Authorization": f"Bearer {api_key}"})
+
+    opener = urllib.request.build_opener(SafeDownloadRedirectHandler(api_url))
+    last_error = None
+    for index, headers in enumerate(attempts):
+        request = urllib.request.Request(image_url, headers=headers)
+        try:
+            with opener.open(request, timeout=timeout) as response:
+                return response.read()
+        except urllib.error.HTTPError as exc:
+            last_error = exc
+            can_try_auth = exc.code in {401, 403} and index + 1 < len(attempts)
+            if can_try_auth:
+                continue
+            break
+        except urllib.error.URLError as exc:
+            last_error = exc
+            break
+
+    image_host = urllib.parse.urlparse(image_url).hostname or "unknown host"
+    status_code = getattr(last_error, "code", 0) or 0
+    status_label = f"HTTP {status_code}" if status_code else str(last_error)
+    trust_note = ""
+    if api_key and not download_hosts_match(image_url, api_url):
+        trust_note = (
+            " The image host differs from the API host, so the API key was not forwarded "
+            "to that host."
+        )
+    raise ImageDownloadError(
+        f"Image URL download failed from {image_host}: {status_label}.{trust_note}",
+        status_code=status_code,
+        image_host=image_host,
+    ) from last_error
+
+
+def write_pending_response(path, response):
+    path.write_text(json.dumps(response, ensure_ascii=False, indent=2), encoding="utf-8")
+    path.chmod(0o600)
+
+
+def load_pending_response(path):
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ImageDownloadError(f"Cannot read pending response {path}: {exc}") from exc
+    data = payload.get("data") if isinstance(payload, dict) else None
+    if not data:
+        raise ImageDownloadError(f"Pending response contains no image data: {path}")
+    return payload, data[0]
+
+
+def save_image(item, out_path, timeout, api_key="", api_url=""):
     if item.get("b64_json"):
         out_path.write_bytes(base64.b64decode(item["b64_json"]))
         return
     if item.get("url"):
-        url = item["url"]
-        # Try with auth header first, then without (some returned URLs are
-        # pre-signed and reject additional Authorization headers).
-        for use_auth in (True, False):
-            headers = {}
-            if use_auth and api_key:
-                headers["Authorization"] = f"Bearer {api_key}"
+        out_path.write_bytes(download_image_url(item["url"], timeout, api_key, api_url))
+        return
+    raise ImageDownloadError(f"No image payload in response item: {item.keys()}")
+
+
+def resolve_worker_count(provider, requested_workers=0):
+    provider_name = normalize_provider(provider)
+    requested_workers = int(requested_workers or 0)
+    if requested_workers < 0 or requested_workers > 8:
+        raise ValueError("--workers must be between 1 and 8, or 0 for the provider default")
+    return requested_workers or DEFAULT_PROVIDER_WORKERS[provider_name]
+
+
+class PanelJobError(RuntimeError):
+    def __init__(self, index, message, duration_seconds=0.0):
+        super().__init__(message)
+        self.index = index
+        self.duration_seconds = duration_seconds
+
+
+def generate_panel_job(job, settings):
+    started_at = time.monotonic()
+    index = job["index"]
+    total = job["total"]
+    out_path = job["out_path"]
+    pending_path = job["pending_path"]
+    print(f"[{index}/{total}] generating {out_path}", flush=True)
+
+    generation_started_at = time.monotonic()
+    try:
+        response = request_image_with_retries(
+            settings["provider"],
+            settings["api_url"],
+            settings["api_key"],
+            settings["model"],
+            job["full_prompt"],
+            settings["size"],
+            settings["response_format"],
+            settings["timeout"],
+            settings["watermark"],
+            settings["reference_images"],
+            settings["quality"],
+            settings["edit_api_url"],
+            retries=settings["retries"],
+            retry_delay=settings["retry_delay"],
+        )
+    except RuntimeError as exc:
+        raise PanelJobError(index, str(exc), time.monotonic() - started_at) from exc
+    generation_seconds = time.monotonic() - generation_started_at
+
+    data = response.get("data") or []
+    if not data:
+        raise PanelJobError(
+            index,
+            f"No image data returned for panel {index}.",
+            time.monotonic() - started_at,
+        )
+
+    write_pending_response(pending_path, response)
+    download_started_at = time.monotonic()
+    try:
+        save_image(
+            data[0],
+            out_path,
+            settings["timeout"],
+            settings["api_key"],
+            settings["api_url"],
+        )
+    except ImageDownloadError as exc:
+        message = (
+            f"{exc}\nGeneration completed, but panel {index} could not be downloaded. "
+            f"The response is saved at {pending_path}; rerun the same command to recover it "
+            "without submitting a new generation."
+        )
+        raise PanelJobError(index, message, time.monotonic() - started_at) from exc
+    download_seconds = time.monotonic() - download_started_at
+    pending_path.unlink(missing_ok=True)
+
+    return {
+        "index": index,
+        "file": out_path.name,
+        "prompt": job["clean_prompt"],
+        "status": "generated",
+        "generation_seconds": round(generation_seconds, 3),
+        "download_seconds": round(download_seconds, 3),
+        "duration_seconds": round(time.monotonic() - started_at, 3),
+    }
+
+
+def run_bounded_jobs(jobs, workers, worker, launch_delay=0.0):
+    jobs = list(jobs)
+    if not jobs:
+        return [], [], 0
+
+    results = []
+    failures = []
+    submitted = 0
+    next_job = iter(jobs)
+    failed = False
+
+    with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="comic-panel") as executor:
+        active = {}
+
+        def submit_one():
+            nonlocal submitted
             try:
-                request = urllib.request.Request(url, headers=headers)
-                with urllib.request.urlopen(request, timeout=timeout) as response:
-                    out_path.write_bytes(response.read())
-                    return
-            except urllib.error.HTTPError as exc:
-                if exc.code == 403 and use_auth:
-                    continue
-                raise
-    raise RuntimeError(f"No image payload in response item: {item.keys()}")
+                job = next(next_job)
+            except StopIteration:
+                return False
+            if submitted and launch_delay:
+                time.sleep(launch_delay)
+            active[executor.submit(worker, job)] = job
+            submitted += 1
+            return True
+
+        for _ in range(min(workers, len(jobs))):
+            submit_one()
+
+        while active:
+            completed, _ = wait(tuple(active), return_when=FIRST_COMPLETED)
+            for future in completed:
+                job = active.pop(future)
+                try:
+                    results.append(future.result())
+                except Exception as exc:
+                    failures.append((job, exc))
+                    failed = True
+            while not failed and len(active) < workers and submit_one():
+                pass
+
+    return results, failures, submitted
+
+
+def write_generation_manifest(path, manifest, started_at):
+    manifest["panels"] = sorted(manifest["panels"], key=lambda item: item["index"])
+    manifest["elapsed_seconds"] = round(time.monotonic() - started_at, 3)
+    path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def main():
@@ -607,10 +830,10 @@ def main():
         load_env_file(Path(pre_args.env_file).expanduser(), override=True)
 
     parser = argparse.ArgumentParser(
-        description="Generate WeChat comic panel images with Agnes Image (default), Volcengine Ark Seedream, or Breakout API.",
+        description="Generate WeChat comic panel images with Agnes Image (default), Volcengine Ark Seedream, or 破局问问.",
         parents=[pre_parser],
     )
-    parser.add_argument("--provider", default=os.environ.get("COMIC_IMAGE_PROVIDER", DEFAULT_PROVIDER), help="Image provider: agnes/gnes (default), seedream/doubao/ark, or breakout/wenwen")
+    parser.add_argument("--provider", default=os.environ.get("COMIC_IMAGE_PROVIDER", DEFAULT_PROVIDER), help="Image provider: agnes/gnes (default), seedream/doubao/ark, or 破局问问 (breakout/pojuwenwen/wenwen)")
     parser.add_argument("--prompts", required=True, help="JSON or text file containing panel prompts")
     parser.add_argument("--out-dir", required=True, help="Output directory for panel PNG files")
     parser.add_argument("--style", default="", help='Style name, alias, or JSON profile stem in --styles-dir; omit to use the profile marked "default": true')
@@ -619,24 +842,29 @@ def main():
     parser.add_argument("--model", default="", help="Override provider default model")
     parser.add_argument("--api-url", default="", help="Override provider default API URL")
     parser.add_argument("--api-key-env", default="", help="Environment variable containing the selected provider API key")
-    parser.add_argument("--size", default="", help="Output size. Agnes default: 1024x768. Seedream default: 2304x1728. Breakout default: 1536x1024")
+    parser.add_argument("--api-key-stdin", action="store_true", help="Read the API key from a hidden terminal prompt instead of environment or .env")
+    parser.add_argument("--size", default="", help="Output size. Agnes default: 1024x768. Seedream default: 2304x1728. 破局问问 default: 1536x1024")
     parser.add_argument("--response-format", default="b64_json", choices=["b64_json", "url"])
-    parser.add_argument("--reference-image", action="append", default=[], help="Reference image for Breakout image edits; repeat this option to upload multiple images as the image field")
-    parser.add_argument("--quality", default="auto", choices=["auto", "low", "medium", "high"], help="Breakout image-edit quality; ignored by other providers")
+    parser.add_argument("--reference-image", action="append", default=[], help="Reference image for 破局问问 image edits; repeat this option to upload multiple images as the image field")
+    parser.add_argument("--quality", default="auto", choices=["auto", "low", "medium", "high"], help="破局问问 image-edit quality; ignored by other providers")
     parser.add_argument("--timeout", type=int, default=300)
     parser.add_argument("--retries", type=int, default=0, choices=range(0, 4), help="Explicit retries for HTTP 429/502/503/504; default: 0 to avoid duplicate billed generations")
     parser.add_argument("--retry-delay", type=float, default=30.0, help="Seconds to wait before an explicit retry (default: 30)")
     parser.add_argument("--sleep", type=float, default=0.0, help="Seconds to wait between requests")
+    parser.add_argument("--workers", type=int, default=0, help="Concurrent panel jobs: 0 uses provider default (破局问问=2, others=1); maximum 8")
+    parser.add_argument("--skip-existing", action="store_true", help="Keep existing non-empty panel files instead of generating them again")
+    parser.add_argument("--regenerate-pending", action="store_true", help="Allow a new billable generation when a saved pending response cannot be downloaded")
     parser.add_argument("--watermark", action="store_true", help="Ask Seedream API to add watermark; ignored by Agnes")
     args = parser.parse_args()
 
     try:
         provider_config = resolve_provider_config(args.provider, args.model, args.api_url, args.api_key_env)
+        workers = resolve_worker_count(provider_config["provider"], args.workers)
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
     if args.reference_image and provider_config["provider"] != "breakout":
-        print("--reference-image is only supported with --provider breakout.", file=sys.stderr)
+        print("--reference-image is only supported with --provider 破局问问 (breakout).", file=sys.stderr)
         return 2
     for raw_path in args.reference_image:
         path = Path(raw_path).expanduser()
@@ -645,11 +873,15 @@ def main():
             return 2
     args.size = args.size or provider_config["default_size"]
 
-    api_key, api_key_env = resolve_api_key(provider_config["api_key_envs"])
+    if args.api_key_stdin:
+        api_key = getpass.getpass(f"{provider_config['label']} API key: ").strip()
+        api_key_env = "stdin"
+    else:
+        api_key, api_key_env = resolve_api_key(provider_config["api_key_envs"])
     if not api_key:
         print(
             f"Missing API key for {provider_config['label']}. Export one of: {', '.join(provider_config['api_key_envs'])}; "
-            "put it in the current directory .env; or pass --env-file /path/to/.env",
+            "put it in the current directory .env; pass --env-file /path/to/.env; or use --api-key-stdin",
             file=sys.stderr,
         )
         return 2
@@ -671,6 +903,9 @@ def main():
 
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+    run_started_at = time.monotonic()
+    manifest_name = f"{provider_config['provider']}-manifest.json"
+    manifest_path = out_dir / manifest_name
     manifest = {
         "provider": provider_config["provider"],
         "provider_label": provider_config["label"],
@@ -693,10 +928,15 @@ def main():
         "quality": args.quality if args.reference_image else "",
         "retries": args.retries,
         "retry_delay": args.retry_delay if args.retries else 0,
+        "workers": workers,
+        "total_prompts": len(prompts),
+        "submitted_generations": 0,
         "panels": [],
     }
 
+    jobs = []
     for index, prompt in enumerate(prompts, start=1):
+        panel_started_at = time.monotonic()
         render_text_in_model = uses_model_rendered_text(text_policy)
         clean_prompt = sanitize_prompt(prompt, preserve_quotes=render_text_in_model)
         if args.reference_image:
@@ -704,38 +944,136 @@ def main():
         else:
             full_prompt = build_full_prompt(style_name, clean_prompt, style_prompt, text_policy)
         out_path = out_dir / f"panel-{index:02d}.png"
-        print(f"[{index}/{len(prompts)}] generating {out_path}", flush=True)
-        try:
-            response = request_image_with_retries(
-                provider_config["provider"],
-                provider_config["api_url"],
-                api_key,
-                provider_config["model"],
-                full_prompt,
-                args.size,
-                args.response_format,
-                args.timeout,
-                args.watermark,
-                args.reference_image,
-                args.quality,
-                provider_config.get("edit_api_url", ""),
-                retries=args.retries,
-                retry_delay=args.retry_delay,
-            )
-        except RuntimeError as exc:
-            print(str(exc), file=sys.stderr)
-            return 1
-        data = response.get("data") or []
-        if not data:
-            raise RuntimeError(f"No image data returned for panel {index}: {response}")
-        save_image(data[0], out_path, args.timeout, api_key)
-        manifest["panels"].append({"file": out_path.name, "prompt": clean_prompt})
-        if args.sleep and index < len(prompts):
-            time.sleep(args.sleep)
+        pending_path = out_dir / f"panel-{index:02d}-pending-response.json"
 
-    manifest_name = f"{provider_config['provider']}-manifest.json"
-    (out_dir / manifest_name).write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"wrote {len(prompts)} panels to {out_dir}")
+        if args.skip_existing and out_path.is_file() and out_path.stat().st_size > 0:
+            pending_path.unlink(missing_ok=True)
+            print(f"[{index}/{len(prompts)}] keeping existing {out_path}", flush=True)
+            manifest["panels"].append(
+                {
+                    "index": index,
+                    "file": out_path.name,
+                    "prompt": clean_prompt,
+                    "status": "kept",
+                    "duration_seconds": round(time.monotonic() - panel_started_at, 3),
+                }
+            )
+            continue
+
+        if pending_path.is_file():
+            print(f"[{index}/{len(prompts)}] recovering saved response {pending_path}", flush=True)
+            try:
+                _, pending_item = load_pending_response(pending_path)
+                save_image(
+                    pending_item,
+                    out_path,
+                    args.timeout,
+                    api_key,
+                    provider_config["api_url"],
+                )
+            except ImageDownloadError as exc:
+                if not args.regenerate_pending:
+                    manifest["panels"].append(
+                        {
+                            "index": index,
+                            "file": out_path.name,
+                            "prompt": clean_prompt,
+                            "status": "pending-download-failed",
+                            "duration_seconds": round(time.monotonic() - panel_started_at, 3),
+                            "error": str(exc),
+                        }
+                    )
+                    write_generation_manifest(manifest_path, manifest, run_started_at)
+                    print(
+                        f"{exc}\nSaved response kept at {pending_path}. No new generation was submitted. "
+                        "Fix download access and rerun the same command, or explicitly pass "
+                        "--regenerate-pending if a duplicate billable generation is acceptable.",
+                        file=sys.stderr,
+                    )
+                    return 1
+                print(
+                    f"Pending response could not be downloaded: {exc}\n"
+                    "--regenerate-pending was explicitly provided; submitting a new billable generation.",
+                    file=sys.stderr,
+                    flush=True,
+                )
+            else:
+                pending_path.unlink(missing_ok=True)
+                manifest["panels"].append(
+                    {
+                        "index": index,
+                        "file": out_path.name,
+                        "prompt": clean_prompt,
+                        "status": "recovered",
+                        "duration_seconds": round(time.monotonic() - panel_started_at, 3),
+                    }
+                )
+                continue
+
+        jobs.append(
+            {
+                "index": index,
+                "total": len(prompts),
+                "clean_prompt": clean_prompt,
+                "full_prompt": full_prompt,
+                "out_path": out_path,
+                "pending_path": pending_path,
+            }
+        )
+
+    settings = {
+        "provider": provider_config["provider"],
+        "api_url": provider_config["api_url"],
+        "edit_api_url": provider_config.get("edit_api_url", ""),
+        "api_key": api_key,
+        "model": provider_config["model"],
+        "size": args.size,
+        "response_format": args.response_format,
+        "timeout": args.timeout,
+        "watermark": args.watermark,
+        "reference_images": args.reference_image,
+        "quality": args.quality,
+        "retries": args.retries,
+        "retry_delay": args.retry_delay,
+    }
+
+    results, failures, submitted = run_bounded_jobs(
+        jobs,
+        workers,
+        lambda job: generate_panel_job(job, settings),
+        launch_delay=args.sleep,
+    )
+    manifest["submitted_generations"] = submitted
+    manifest["panels"].extend(results)
+    for job, exc in failures:
+        manifest["panels"].append(
+            {
+                "index": job["index"],
+                "file": job["out_path"].name,
+                "prompt": job["clean_prompt"],
+                "status": "failed",
+                "duration_seconds": round(getattr(exc, "duration_seconds", 0.0), 3),
+                "error": str(exc),
+            }
+        )
+    write_generation_manifest(manifest_path, manifest, run_started_at)
+
+    if failures:
+        for job, exc in failures:
+            print(f"Panel {job['index']} failed: {exc}", file=sys.stderr)
+        print(
+            "Stopped scheduling new panels after the first failure; already running panels were allowed to finish.",
+            file=sys.stderr,
+        )
+        return 1
+
+    generated_or_recovered = sum(
+        panel["status"] in {"generated", "recovered", "kept"} for panel in manifest["panels"]
+    )
+    print(
+        f"wrote {generated_or_recovered} panels to {out_dir} "
+        f"with workers={workers} in {manifest['elapsed_seconds']:.3f}s"
+    )
     return 0
 
 

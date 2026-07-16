@@ -1,8 +1,31 @@
 # Comic Creator Workflow
 
-Use this workflow before writing prompts or stitching a long comic. It mirrors a professional public-account comic process: topic first, copy second, storyboard third, image generation fourth, layout last.
+Read this file for every comic production request before writing copy, prompts, images, or layout. Run the stages in order. A later stage cannot repair a skipped earlier stage.
 
-## 1. Beginner Topic Selection
+## Contents
+
+1. Workflow state and stop rules
+2. Beginner topic selection
+3. Topic and thesis
+4. Article title metadata
+5. 小林 interactive branch
+6. Copy draft
+7. Panel count and storyboard
+8. Prompt generation
+9. Image QA
+10. Layout and final QA
+
+## 1. Workflow State And Stop Rules
+
+Track `BRIEF -> COPY -> STORYBOARD -> PROMPTS -> PANELS -> LAYOUT -> FINAL_QA`.
+
+- Mark a state `PASS` only when its required artifact exists and has been checked.
+- Resume from the first incomplete state when files from an earlier run already exist.
+- If a state requires user confirmation, present that state and end the turn. Do not call image generation while confirmation is pending.
+- For non-小林 styles, an explicit request to directly generate authorizes uninterrupted execution, but does not authorize skipping stage artifacts or QA.
+- For 小林-family styles, the confirmation sequence is mandatory even when the user requests direct generation.
+
+## 2. Beginner Topic Selection
 
 When the user is new, vague, or only says they want a comic, start with a guided topic menu. Do not draft final copy, storyboard, image prompts, images, or `article.json` yet.
 
@@ -33,7 +56,7 @@ Style matching:
 
 For a broad seed such as `好好过日子，好好爱自己`, recommend angles like self-care, slowing down, emotional boundaries, ordinary daily rituals, and quiet confidence. Ask the user to choose one, combine several, or provide their own. Continue only after the user confirms the theme and style.
 
-## 2. Topic And Thesis
+## 3. Topic And Thesis
 
 Define the editorial brief before writing:
 
@@ -45,7 +68,7 @@ Define the editorial brief before writing:
 
 Do not start from image prompts. Start from what the comic wants to say.
 
-## 3. Article Title Metadata
+## 4. Article Title Metadata
 
 Generate 5-10 title candidates for the WeChat article title field only. The selected title is metadata, not image content.
 
@@ -69,13 +92,13 @@ Useful title formulas:
 
 Choose the title that matches the topic and style, then keep it outside the long image.
 
-## 4. 小林独立金句式漫画流程
+## 5. 小林独立金句式漫画流程
 
 Use this branch for `小林诗意治愈`, `小林生活讽刺`, and `小林奇想涂鸦`.
 
 These styles are not continuous story comics. A finished article is a set of independent numbered image-caption units around one topic. Each unit must be understandable on its own: one approved caption, one visual metaphor, one complete generated source image.
 
-Mandatory confirmation gates:
+Mandatory confirmation gates; never combine two gates into one turn:
 
 - **主题/风格确认**: require the user's comic topic. If the user asks for a `小林` comic but does not specify style 1, 2, or 3, recommend the closest style and wait for confirmation.
 - **金句组确认**: before image prompts, draft a beat table with `编号`, `caption 行`, `核心意思`, `视觉隐喻`, and `画面方向`. The caption lines are the final reader-facing handwritten text. Wait for user confirmation before writing prompts.
@@ -84,7 +107,7 @@ Mandatory confirmation gates:
 
 After all images are accepted, keep the approved beat order as the default order. Reorder only when the user explicitly requests it. Then build a `badge` + `image` layout from the accepted panels.
 
-## 5. Copy Draft
+## 6. Copy Draft
 
 Write the comic copy before deciding prompts. The copy draft should include:
 
@@ -97,7 +120,7 @@ Write the comic copy before deciding prompts. The copy draft should include:
 
 At this stage, do not generate images. First decide what every reader-facing line says.
 
-## 6. Panel Count And Storyboard
+## 7. Panel Count And Storyboard
 
 After the copy is approved, decide how many images the comic needs. Each image must have a reason to exist.
 
@@ -114,7 +137,7 @@ Create a storyboard table with one row per image:
 
 Only after the storyboard is complete should the Agent generate image prompts.
 
-## 7. Prompt Generation
+## 8. Prompt Generation
 
 Turn each storyboard row into one image prompt:
 
@@ -127,7 +150,9 @@ Turn each storyboard row into one image prompt:
 - For `小林`-family styles, include only the beat caption lines in the prompt as quoted text, specify `complete source image as one bitmap`, and describe the upper or middle watercolor scene plus lower handwritten caption area.
 - Never include the WeChat article title in a panel prompt unless the user explicitly asks for a poster-style title image.
 
-## 8. Image QA
+Read `prompt-guide.md` for exact text-policy and style-specific prompt construction. Save the completed set as `panel-prompts.json` before any image call.
+
+## 9. Image QA
 
 Review every generated image before layout:
 
@@ -141,7 +166,7 @@ Review every generated image before layout:
 
 If a panel fails, regenerate it before stitching. Do not fix a failed panel by hiding it in layout.
 
-## 9. Layout
+## 10. Layout And Final QA
 
 Create `article.json` after panel QA:
 
@@ -155,9 +180,7 @@ Create `article.json` after panel QA:
 - Use style-specific blocks such as `badge`, `text_bars`, `section_label`, or `framed_image`.
 - Keep image paths relative to `article.json`.
 
-## 10. Final QA
-
-Open the final long image and verify:
+Open the built long image and verify:
 
 - It is one vertical image.
 - The WeChat article title is not inside the long image.
