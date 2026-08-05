@@ -24,6 +24,7 @@ from typing import Any, Callable, Optional
 
 
 API_BASE = "https://www.dajiala.com"
+TRANSIENT_API_CODES = {-1, 106, 107, 111, 112, 2003, 2005, 500}
 DEFAULT_OUTPUT_DIR = Path(
     os.getenv("WECHAT_ARTICLE_OUTPUT_DIR", Path.cwd() / "output" / "wechat-articles")
 ).expanduser()
@@ -344,9 +345,10 @@ class ImageLocalizer:
 class DajialaClient:
     api_key: str
     verifycode: str = ""
-    cookie: str = ""
     timeout: int = 30
     api_base: str = API_BASE
+    api_retries: int = 3
+    retry_backoff: float = 2.0
 
     def request_json(
         self,
@@ -367,8 +369,6 @@ class DajialaClient:
         if body is not None:
             data = json.dumps(body, ensure_ascii=False).encode("utf-8")
             headers["Content-Type"] = "application/json"
-        if self.cookie:
-            headers["Cookie"] = self.cookie
         request = urllib.request.Request(url, data=data, headers=headers, method=method)
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
@@ -384,29 +384,60 @@ class DajialaClient:
     def credentials(self) -> dict[str, str]:
         return {"key": self.api_key, "verifycode": self.verifycode}
 
-    def history(self, account: str, page: int) -> dict[str, Any]:
-        return self.request_json(
+    def request_with_retry(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        body: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        response: dict[str, Any] = {}
+        for attempt in range(self.api_retries + 1):
+            response = self.request_json(method, path, params=params, body=body)
+            if response.get("code") not in TRANSIENT_API_CODES or attempt >= self.api_retries:
+                return response
+            time.sleep(self.retry_backoff * (2**attempt))
+        return response
+
+    def history(
+        self,
+        account: str,
+        *,
+        offset: str = "",
+        ghid: str = "",
+        url: str = "",
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {"offset": offset, **self.credentials()}
+        if ghid:
+            body["ghid"] = ghid
+        elif url:
+            body["url"] = url
+        else:
+            # The current endpoint accepts nickname; the old name parameter now returns code=105.
+            body["nickname"] = account
+        return self.request_with_retry(
             "POST",
             "/fbmain/monitor/v3/post_history",
-            body={"biz": "", "url": "", "name": account, "page": page, **self.credentials()},
+            body=body,
         )
 
     def article_html(self, article_url: str) -> dict[str, Any]:
-        return self.request_json(
+        return self.request_with_retry(
             "POST",
             "/fbmain/monitor/v3/article_html",
             body={"url": article_url, **self.credentials()},
         )
 
     def metrics(self, article_url: str) -> dict[str, Any]:
-        return self.request_json(
+        return self.request_with_retry(
             "POST",
             "/fbmain/monitor/v3/read_zan_pro",
             body={"url": article_url, **self.credentials()},
         )
 
     def comments(self, article_url: str, buffer: str) -> dict[str, Any]:
-        return self.request_json(
+        return self.request_with_retry(
             "POST",
             "/fbmain/monitor/v3/article_comment2",
             body={"url": article_url, "buffer": buffer, **self.credentials()},
@@ -589,7 +620,13 @@ def write_article(output_dir: Path, article: dict[str, Any], timeout: int) -> tu
     return article_path, localizer
 
 
-def write_tables(account_dir: Path, articles: list[dict[str, Any]], comments: list[dict[str, Any]]) -> None:
+def write_tables(
+    account_dir: Path,
+    articles: list[dict[str, Any]],
+    comments: list[dict[str, Any]],
+    *,
+    include_comments: bool = False,
+) -> None:
     account_dir.mkdir(parents=True, exist_ok=True)
     stale_overview = account_dir / "账号概览.md"
     if stale_overview.exists():
@@ -600,6 +637,9 @@ def write_tables(account_dir: Path, articles: list[dict[str, Any]], comments: li
         writer.writeheader()
         for article in sorted(articles, key=lambda item: item.get("publish_time") or "", reverse=True):
             writer.writerow({key: article.get(key, "") for key in ARTICLE_FIELDS})
+
+    if not include_comments:
+        return
 
     stale_comment_table = account_dir / "评论数据.csv"
     if stale_comment_table.exists():
@@ -639,7 +679,6 @@ def collect(args: argparse.Namespace) -> int:
         "JIZHILIE_VERIFY_CODE",
         "VERIFY_CODE",
     )
-    cookie = args.cookie or env_first("DAJIALA_COOKIE")
     if not api_key:
         print(
             "还没有配置极致了 API Key。请把 API Key 和附加码提供给 Agent，让它帮你完成本地配置。",
@@ -650,21 +689,33 @@ def collect(args: argparse.Namespace) -> int:
     output_dir = Path(args.output_dir).expanduser()
     output_dir.mkdir(parents=True, exist_ok=True)
     account = args.account.strip()
-    client = DajialaClient(api_key=api_key, verifycode=verifycode, cookie=cookie, timeout=args.timeout)
+    if not account and not args.ghid and not args.account_url:
+        print("请至少提供 --account、--ghid 或 --account-url 其中一个。", file=sys.stderr)
+        return 2
+    account_label = account or args.ghid or args.account_url
+    client = DajialaClient(api_key=api_key, verifycode=verifycode, timeout=args.timeout)
     start_date = dt.date.fromisoformat(args.start_date) if args.start_date else None
     articles: list[dict[str, Any]] = []
     all_comments: list[dict[str, Any]] = []
+    include_comments = bool(getattr(args, "include_comments", False))
     seen_urls: set[str] = set()
     image_downloaded = 0
     image_failures: list[str] = []
     gif_skipped = 0
     page = 1
+    offset = ""
+    seen_offsets: set[str] = set()
 
     while True:
         if args.max_pages and page > args.max_pages:
             break
-        print(f"获取列表：{account} 第 {page} 页")
-        history_response = client.history(account, page)
+        print(f"获取列表：{account_label} 第 {page} 页")
+        history_response = client.history(
+            account,
+            offset=offset,
+            ghid=args.ghid,
+            url=args.account_url,
+        )
         assert_ok(history_response, "获取文章列表", allow_end=True)
         if history_response.get("code") in (110, 115):
             break
@@ -690,7 +741,7 @@ def collect(args: argparse.Namespace) -> int:
             assert_ok(html_response, "获取文章 HTML")
             metrics_response = client.metrics(article_url)
             assert_ok(metrics_response, "获取互动数据")
-            comments = collect_first_level_comments(client, article_url)
+            comments = collect_first_level_comments(client, article_url) if include_comments else []
             article = merge_article(account, item, html_response, pick_metrics(metrics_response))
             if not article["content"]:
                 raise RuntimeError(f"正文为空：{article['title']}")
@@ -706,22 +757,31 @@ def collect(args: argparse.Namespace) -> int:
                 break
             time.sleep(args.delay)
 
-        total_page = int(history_response.get("total_page") or 0)
-        if should_stop or total_page and page >= total_page:
+        next_offset_value = history_response.get("offset")
+        next_offset = "" if next_offset_value in (None, "") else str(next_offset_value)
+        is_end = history_response.get("is_end") in (True, 1, "1", "true", "True")
+        if should_stop or is_end or next_offset in seen_offsets or next_offset == offset:
             break
+        if not next_offset:
+            # The current API uses offset; stop safely if an incomplete response omits it.
+            break
+        if next_offset:
+            seen_offsets.add(next_offset)
+            offset = next_offset
         page += 1
         time.sleep(args.delay)
 
     if articles:
         account_name = articles[0]["account"] or account
         account_dir = output_dir / sanitize_filename(account_name)
-        write_tables(account_dir, articles, all_comments)
+        write_tables(account_dir, articles, all_comments, include_comments=include_comments)
 
     status = "部分成功" if image_failures else "成功"
     print(
         f"完成：{status}；文章 {len(articles)} 篇，一级评论 {len(all_comments)} 条，"
         f"本地静态图片 {image_downloaded} 张，跳过 GIF {gif_skipped} 张，"
-        f"图片失败 {len(image_failures)} 张；输出目录 {output_dir}"
+        f"图片失败 {len(image_failures)} 张；评论内容 {'已采集' if include_comments else '未采集'}；"
+        f"输出目录 {output_dir}"
     )
     for failure in image_failures:
         print(f"图片下载失败：{failure}", file=sys.stderr)
@@ -729,8 +789,8 @@ def collect(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="采集公众号文章、本地静态图片、互动数据和匿名一级评论")
-    parser.add_argument("--account", required=True, help="公众号名称，例如：广州楼市发布")
+    parser = argparse.ArgumentParser(description="采集公众号文章、本地静态图片和互动数据；评论需显式启用")
+    parser.add_argument("--account", default="", help="公众号名称，例如：广州楼市发布")
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR), help="输出目录，默认 ./output/wechat-articles")
     parser.add_argument("--start-date", default="", help="只采集此日期及之后的文章，格式 YYYY-MM-DD")
     parser.add_argument("--limit", type=int, default=0, help="最多采集文章数，0 表示不限制")
@@ -738,9 +798,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--delay", type=float, default=0.6, help="文章之间的接口调用间隔秒数")
     parser.add_argument("--timeout", type=int, default=30, help="接口和图片下载超时秒数")
     parser.add_argument("--include-deleted", action="store_true", help="包含列表中标记为已删除的文章")
+    parser.add_argument("--ghid", default="", help="公众号原始 ID；优先于公众号名称查询历史文章")
+    parser.add_argument("--account-url", default="", help="任意该公众号文章链接；用于查询历史文章")
+    parser.add_argument(
+        "--include-comments",
+        action="store_true",
+        help="仅在用户明确确认后使用：采集公开一级评论并生成评论 CSV",
+    )
     parser.add_argument("--api-key", default="", help="极致了 API key，建议使用环境变量 DAJIALA_API_KEY")
     parser.add_argument("--verifycode", default="", help="附加码，建议使用环境变量 DAJIALA_VERIFY_CODE")
-    parser.add_argument("--cookie", default="", help="必要时传极致了 Cookie，建议使用环境变量 DAJIALA_COOKIE")
     parser.add_argument("--env-file", default="", help="读取指定 .env 文件；优先级高于当前目录 .env")
     return parser
 

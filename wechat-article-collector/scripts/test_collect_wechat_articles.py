@@ -72,7 +72,153 @@ class FakeCommentClient:
         }
 
 
+class FakeCollectorClient:
+    def __init__(self) -> None:
+        self.comment_calls = 0
+
+    def history(self, account: str, *, offset: str = "", ghid: str = "", url: str = ""):
+        del account, offset, ghid, url
+        return {
+            "code": 0,
+            "is_end": 1,
+            "data": [
+                {
+                    "url": "https://mp.weixin.qq.com/s/example",
+                    "title": "示例文章",
+                    "post_time": "2026-08-05 10:00:00",
+                }
+            ],
+        }
+
+    def article_html(self, article_url: str):
+        del article_url
+        return {"code": 0, "data": {"title": "示例文章", "nickname": "示例账号", "html": "<p>正文</p>"}}
+
+    def metrics(self, article_url: str):
+        del article_url
+        return {
+            "code": 0,
+            "data": {"read": 1, "zan": 2, "looking": 3, "share_num": 4, "collect_num": 5, "comment_count": 6},
+        }
+
+    def comments(self, article_url: str, buffer: str):
+        del article_url, buffer
+        self.comment_calls += 1
+        return {"code": 0, "data": [], "total": 0, "buffer": ""}
+
+
 class CollectorTests(unittest.TestCase):
+    def test_api_request_does_not_send_cookie_header(self) -> None:
+        client = collector.DajialaClient(api_key="secret", verifycode="verify")
+        with mock.patch.object(
+            collector.urllib.request,
+            "urlopen",
+            return_value=FakeResponse(b'{"code": 0}'),
+        ) as urlopen:
+            response = client.request_json("POST", "/test", body={"key": "secret", "verifycode": "verify"})
+
+        self.assertEqual(response["code"], 0)
+        request = urlopen.call_args.args[0]
+        self.assertNotIn("Cookie", request.headers)
+
+    def test_history_uses_current_nickname_and_offset_contract(self) -> None:
+        client = collector.DajialaClient(api_key="secret", verifycode="verify")
+        with mock.patch.object(client, "request_json", return_value={"code": 0}) as request_json:
+            client.history("示例账号", offset="cursor-2")
+
+        body = request_json.call_args.kwargs["body"]
+        self.assertEqual(body["nickname"], "示例账号")
+        self.assertEqual(body["offset"], "cursor-2")
+        self.assertNotIn("name", body)
+        self.assertNotIn("page", body)
+
+        with mock.patch.object(client, "request_json", return_value={"code": 0}) as request_json:
+            client.history("", ghid="gh_example")
+        ghid_body = request_json.call_args.kwargs["body"]
+        self.assertEqual(ghid_body["ghid"], "gh_example")
+        self.assertNotIn("nickname", ghid_body)
+
+    def test_pick_metrics_maps_official_pro_fields(self) -> None:
+        metrics = collector.pick_metrics(
+            {
+                "code": 0,
+                "data": {
+                    "read": 101,
+                    "zan": 12,
+                    "looking": 13,
+                    "share_num": 14,
+                    "collect_num": 15,
+                    "comment_count": -1,
+                },
+            }
+        )
+        self.assertEqual(
+            metrics,
+            {"read": 101, "like": 12, "looking": 13, "share": 14, "collect": 15, "comment_count": -1},
+        )
+
+    def test_write_tables_skips_comments_by_default(self) -> None:
+        article = {key: "" for key in collector.ARTICLE_FIELDS}
+        article.update({"title": "不采评论", "article_url": "https://example/article"})
+        comment = {
+            "article_url": article["article_url"],
+            "content": "不应被写入",
+            "like_num": 1,
+            "is_top": 0,
+            "province_name": "广东",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            account_dir = Path(directory)
+            collector.write_tables(account_dir, [article], [comment])
+            self.assertTrue((account_dir / "文章数据.csv").exists())
+            self.assertFalse((account_dir / "评论").exists())
+
+    def test_parser_comments_are_opt_in(self) -> None:
+        args = collector.build_parser().parse_args(["--account", "示例账号"])
+        self.assertFalse(args.include_comments)
+        enabled = collector.build_parser().parse_args(["--account", "示例账号", "--include-comments"])
+        self.assertTrue(enabled.include_comments)
+
+    def test_collect_calls_comment_api_only_when_enabled(self) -> None:
+        for include_comments in (False, True):
+            with self.subTest(include_comments=include_comments), tempfile.TemporaryDirectory() as directory:
+                fake_client = FakeCollectorClient()
+                args_list = [
+                    "--account",
+                    "示例账号",
+                    "--api-key",
+                    "test-key",
+                    "--output-dir",
+                    directory,
+                    "--limit",
+                    "1",
+                    "--delay",
+                    "0",
+                ]
+                if include_comments:
+                    args_list.append("--include-comments")
+                args = collector.build_parser().parse_args(args_list)
+                localizer = mock.Mock(downloaded=0, failures=[], skipped_gifs=0)
+                with mock.patch.object(collector, "DajialaClient", return_value=fake_client), mock.patch.object(
+                    collector, "write_article", return_value=(Path(directory) / "article.md", localizer)
+                ), mock.patch.object(collector, "write_tables") as write_tables:
+                    self.assertEqual(collector.collect(args), 0)
+
+                self.assertEqual(fake_client.comment_calls, int(include_comments))
+                self.assertEqual(write_tables.call_args.kwargs["include_comments"], include_comments)
+
+    def test_transient_api_response_retries_with_backoff(self) -> None:
+        client = collector.DajialaClient(api_key="secret", api_retries=2, retry_backoff=2)
+        with mock.patch.object(
+            client,
+            "request_json",
+            side_effect=[{"code": 106, "msg": "too fast"}, {"code": 0, "data": {"read": 1}}],
+        ), mock.patch.object(collector.time, "sleep") as sleep:
+            response = client.metrics("https://mp.weixin.qq.com/s/example")
+
+        self.assertEqual(response["code"], 0)
+        sleep.assert_called_once_with(2)
+
     def test_static_images_are_local_and_gifs_are_skipped(self) -> None:
         jpeg = b"\xff\xd8\xff" + b"same-image-data"
         with tempfile.TemporaryDirectory() as directory:
@@ -153,7 +299,7 @@ class CollectorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             account_dir = Path(directory)
             (account_dir / "评论数据.csv").write_text("旧汇总文件", encoding="utf-8")
-            collector.write_tables(account_dir, [article], [comment])
+            collector.write_tables(account_dir, [article], [comment], include_comments=True)
             with (account_dir / "文章数据.csv").open(encoding="utf-8-sig", newline="") as file:
                 article_rows = list(csv.DictReader(file))
             comment_path = account_dir / "评论" / f"{article['title']}.csv"
@@ -182,7 +328,7 @@ class CollectorTests(unittest.TestCase):
         ]
         with tempfile.TemporaryDirectory() as directory:
             account_dir = Path(directory)
-            collector.write_tables(account_dir, [first, second], comments)
+            collector.write_tables(account_dir, [first, second], comments, include_comments=True)
             first_path = account_dir / "评论" / "第一篇文章.csv"
             second_path = account_dir / "评论" / "第二篇文章.csv"
             self.assertTrue(first_path.exists())
