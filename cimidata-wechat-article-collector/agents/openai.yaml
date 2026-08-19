@@ -1,0 +1,4 @@
+interface:
+  display_name: "次幂公众号数据"
+  short_description: "提取公众号正文、互动、历史文章和爆文"
+  default_prompt: "Use $cimidata-wechat-article-collector to提取指定公众号最近一篇文章的正文；先说明费用并等待确认。"
