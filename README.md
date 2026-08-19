@@ -1,22 +1,67 @@
 # wangyong-skills
 
-一组面向中文创作者、个人效率和内容生产场景的 AI Agent skills。
+一个持续维护的中文 AI Agent Skill 开源仓库。每个目录都是独立 Skill，解决一个明确的问题；安装后直接告诉 AI 你想完成什么即可。
 
-每个 skill 都是一个独立目录，入口文件是 `SKILL.md`。只要你的 Agent 支持读取 `SKILL.md` 形式的技能目录，就可以安装和使用本项目里的单个 skill，或一次性安装全部 skill。
+## 安装任意一个 Skill
 
-## Skills
+把下面这段提示词复制给你的 AI，并把 `<skill-name>` 换成下表中的 Skill 名称：
 
-| Skill | 适合做什么 | 是否需要 API |
+```text
+请帮我安装这个仓库里的 <skill-name>：
+https://github.com/wangyong5609/wangyong-skills
+
+只安装这个 Skill。安装完成后，告诉我可以怎么开始使用。
+```
+
+例如，安装次幂公众号文章采集 Skill 时，把 `<skill-name>` 换成 `cimidata-wechat-article-collector`。
+
+## Skill 目录
+
+| Skill | 能做什么 | 状态 |
 | --- | --- | --- |
-| `wechat-article-collector` | 采集微信公众号历史文章，导出 Markdown、账号概览和 CSV 数据 | 需要大加啦/极致了 API key |
-| `wechat-official-account-comic` | 生成多风格微信公众号漫画长图，支持沉淀和测试新增漫画风格 profile | 拼接只需本地 Python；批量生图需要豆包/Seedream API |
-| `macos-app-icon` | 生成、优化、预览和打包 macOS 应用图标 `.icns` | 通常不需要 API，可能需要图片生成能力 |
-| `life-interview-planner` | 通过结构化访谈挖掘人生方向、优势假设、价值观和低风险实验 | 不需要 API |
-| `ai-creator-cover` | 通过访谈、方案卡和中文提示词设计 AI 自媒体视频封面 | 需要 Agent 自带图片生成能力 |
+| `cimidata-wechat-article-collector` | 采集公众号历史文章、正文、互动数据、脱敏评论、关键词搜索和爆文榜单 | 推荐安装 |
+| `wechat-article-collector` | 使用极致了/大加啦采集公众号历史文章、正文图片、互动数据和可选评论 | 持续维护 |
+| `wechat-official-account-comic` | 生成可发布的微信公众号漫画长图，支持多种可复用风格 | 持续维护 |
+| `macos-app-icon` | 生成、优化、预览和打包 macOS `.icns` 图标 | 持续维护 |
+| `life-interview-planner` | 通过结构化访谈梳理人生方向、优势与下一步实验 | 持续维护 |
+| `ai-creator-cover` | 设计 AI 自媒体视频封面和中文生图提示词 | 持续维护 |
+
+所有 Skill 都可以单独安装、单独使用。具体输入、输出和首次使用说明，请以各目录中的 `SKILL.md` 为准。
+
+## 公众号文章采集：怎么选
+
+| Skill | 数据来源 | 适合谁 |
+| --- | --- | --- |
+| `cimidata-wechat-article-collector` | 次幂数据 API | 新用户、希望控制成本的日常采集；当前更推荐安装 |
+| `wechat-article-collector` | 极致了/大加啦 API | 已有极致了账号、已有相关工作流的用户 |
+
+两者都能采集正文和互动数据。次幂版的常见调用成本通常更低，执行前会先展示本次最高费用并等待确认；极致了版保留给已有用户继续使用。接口价格会调整，请以各服务商当期后台价格为准。
+
+## 使用示例
+
+安装后，直接用结果描述来告诉 AI：
+
+```text
+帮我采集「公众号名称」最近一篇文章，只要正文。
+```
+
+```text
+帮我做一张微信公众号漫画长图，主题是“为什么下午三点容易困”。
+```
+
+```text
+根据这张图片生成一个 macOS 应用图标。
+```
+
+```text
+和我做一次人生方向访谈。
+```
+
+```text
+帮我设计一张 AI 自媒体视频封面。
+```
 
 ## 效果预览
-
-精选示例图会直接展示在 README 中，较长图片保留原图链接查看。
 
 | Skill | 示例 |
 | --- | --- |
@@ -24,310 +69,30 @@
 | `wechat-official-account-comic` | [暖白手绘漫画](./docs/examples/wechat-comic-warm-white-handdrawn.png) / [蓝栏柔彩漫画](./docs/examples/wechat-comic-blue-bar-soft-color.png) / [绿底粗线漫画](./docs/examples/wechat-comic-green-bold-line.png) |
 | `ai-creator-cover` | [查看全部封面示例](./ai-creator-cover/assets/examples/showcase/) |
 
-### AI 自媒体封面示例
+## 项目说明
 
-这些示例统一保存在 `ai-creator-cover/assets/examples/showcase/`。真人出镜是主要封面形态，无人像工具封面作为备选方案。
+这是个人维护的开源 Skill 仓库。新的 Skill 会在完成真实使用验证后加入；已有 Skill 会根据实际反馈持续改进。
 
-#### 真人封面（主要）
+项目约定：
 
-| Codex 01 | Codex 02 | Codex 03 | Codex 04 |
-| --- | --- | --- | --- |
-| <img src="./ai-creator-cover/assets/examples/showcase/selected-cover-01.png" alt="Codex 真人封面示例 01" width="180"> | <img src="./ai-creator-cover/assets/examples/showcase/selected-cover-02.png" alt="Codex 真人封面示例 02" width="180"> | <img src="./ai-creator-cover/assets/examples/showcase/selected-cover-03.png" alt="Codex 真人封面示例 03" width="180"> | <img src="./ai-creator-cover/assets/examples/showcase/selected-cover-04.png" alt="Codex 真人封面示例 04" width="180"> |
+- 每个顶层 Skill 目录必须包含 `SKILL.md`。
+- 目录名使用 kebab-case，并与 frontmatter 中的 `name` 对应。
+- 可复用脚本放入 `scripts/`，参考资料放入 `docs/` 或 `references/`。
+- 不提交 API Key、Secret、Cookie、个人照片、生成产物或本地研究数据。
+- 付费接口必须先说明范围与费用上限，得到确认后才调用。
 
-| Codex 05 | AI 视频 | 新模型 | 亲和力 |
-| --- | --- | --- | --- |
-| <img src="./ai-creator-cover/assets/examples/showcase/selected-cover-05.png" alt="Codex 真人封面示例 05" width="180"> | <img src="./ai-creator-cover/assets/examples/showcase/selected-cover-06.png" alt="AI 视频真人封面示例" width="180"> | <img src="./ai-creator-cover/assets/examples/showcase/selected-cover-07.png" alt="新模型真人封面示例" width="180"> | <img src="./ai-creator-cover/assets/examples/showcase/friendly-expression-test.png" alt="真人亲和力封面示例" width="180"> |
+## 贡献与反馈
 
-#### 无人像封面（备选）
+欢迎提交 Issue、改进建议和经过真实使用验证的 Skill。新增 Skill 请说明：
 
-| Codex | ChatGPT | Claude Code | Gemini CLI |
-| --- | --- | --- | --- |
-| <img src="./ai-creator-cover/assets/examples/showcase/codex-newbie-start.png" alt="Codex 零基础教程无人像封面" width="180"> | <img src="./ai-creator-cover/assets/examples/showcase/chatgpt-prompt-library.png" alt="ChatGPT 提示词库无人像封面" width="180"> | <img src="./ai-creator-cover/assets/examples/showcase/claude-code-practice.png" alt="Claude Code 实战无人像封面" width="180"> | <img src="./ai-creator-cover/assets/examples/showcase/gemini-cli-intro.png" alt="Gemini CLI 入门无人像封面" width="180"> |
+- 它解决什么问题；
+- 用户会怎样描述这个需求；
+- 是否依赖外部 API 或付费服务；
+- 如何验证它能正常工作。
 
-| Cursor |
-| --- |
-| <img src="./ai-creator-cover/assets/examples/showcase/cursor-auto-code.png" alt="Cursor 自动写代码无人像封面" width="180"> |
 
-## 项目结构
-
-```text
-wangyong-skills/
-  README.md
-  LICENSE
-  .env.example
-  docs/examples/
-  wechat-article-collector/
-    SKILL.md
-    scripts/
-  wechat-official-account-comic/
-    SKILL.md
-    requirements.txt
-    docs/
-    scripts/
-    templates/
-    styles/
-  macos-app-icon/
-    SKILL.md
-  life-interview-planner/
-    SKILL.md
-    references/
-  ai-creator-cover/
-    SKILL.md
-    requirements.txt
-    assets/examples/showcase/
-    profile.md
-    references/
-```
-
-约定：
-
-- 每个顶层 skill 目录都应该有 `SKILL.md`。
-- 目录名使用 kebab-case，并尽量和 `SKILL.md` frontmatter 里的 `name` 保持一致。
-- 脚本放在 `scripts/`，参考资料放在 `docs/` 或 `references/`，模板放在 `templates/`。
-- 输出文件、API key、Cookie、个人照片和本地研究素材不要提交到仓库。
-
-## 小白快速开始
-
-### 方式一：让你的 Agent 自动安装
-
-把下面这段话复制给支持 skills 的 AI Agent：
-
-```text
-请帮我安装这个 GitHub 仓库里的 AI Agent skills：
-https://github.com/wangyong5609/wangyong-skills
-
-请先确认你当前环境支持的 skills 安装目录和格式，然后下载这个仓库，把里面的 skill 目录安装到正确位置。安装完成后，请告诉我安装了哪些 skill，以及是否需要重启 Agent 或新开会话。
-```
-
-只安装一个 skill 时，把 `<skill-name>` 换成上表里的名字：
-
-```text
-请帮我只安装这个仓库里的 <skill-name>：
-https://github.com/wangyong5609/wangyong-skills
-
-请先确认你当前环境支持的 skills 安装目录和格式，然后只安装这个 skill。
-```
-
-### 方式二：手动安装到 Codex
-
-如果你使用的是 Codex 兼容的本地 skills 目录，可以这样安装全部 skill：
-
-```bash
-git clone https://github.com/wangyong5609/wangyong-skills.git
-cd wangyong-skills
-mkdir -p ~/.codex/skills
-cp -R wechat-article-collector wechat-official-account-comic macos-app-icon life-interview-planner ai-creator-cover ~/.codex/skills/
-```
-
-只安装一个 skill，例如 `ai-creator-cover`：
-
-```bash
-mkdir -p ~/.codex/skills
-cp -R ai-creator-cover ~/.codex/skills/
-```
-
-安装后，重启 Agent 或新开一个会话，让它重新读取 skills。
-
-## 基础依赖
-
-如果你只使用纯文本访谈类 skill，不需要安装 Python 依赖。
-
-这个仓库不提供根目录统一依赖文件。每个有脚本依赖的 skill 自己维护 `requirements.txt`，按需安装即可：
-
-```bash
-python3 -m pip install -r wechat-official-account-comic/requirements.txt
-python3 -m pip install -r ai-creator-cover/requirements.txt
-```
-
-`wechat-official-account-comic/requirements.txt` 用于公众号漫画长图拼接脚本。`ai-creator-cover/requirements.txt` 只用于研究辅助脚本 `download_covers.py`，日常封面设计不需要安装它。
-
-`macos-app-icon` 如果需要本地处理图标，建议安装 ImageMagick：
-
-```bash
-brew install imagemagick
-```
-
-## API key 配置
-
-普通用户不需要理解或手动配置环境变量。安装 Skill 后直接对 Agent 说：
-
-```text
-帮我配置微信公众号文章采集。我可以提供极致了 API Key 和附加码。
-```
-
-Agent 会询问 API Key 和附加码，并把它们保存到只在本机使用、不会提交到 GitHub 的 `.env`。
-
-熟悉命令行的用户也可以复制 `.env.example` 为 `.env` 后自行填写。
-
-常用变量：
-
-| 变量 | 用途 |
-| --- | --- |
-| `DAJIALA_API_KEY` | 微信公众号文章采集 |
-| `DAJIALA_VERIFY_CODE` | 大加啦/极致了附加码，没有可留空 |
-| `DAJIALA_COOKIE` | 可选 Cookie |
-| `DOUBAO_API_KEY` | 豆包/Seedream 批量生图 |
-| `ARK_API_KEY` | 火山方舟 API key 兼容变量 |
-
-不要把 `.env`、Cookie、个人图片或生成结果提交到仓库。
-
-## 小白使用教程
-
-### 1. 采集微信公众号文章
-
-适合想把某个公众号历史文章保存成 Markdown 和 CSV 的场景。
-
-准备：
-
-1. 注册或登录大加啦/极致了接口页：`https://www.dajiala.com/main/interface?actnav=0`
-2. 拿到 API key。
-3. 把 API Key 和附加码提供给 Agent；没有附加码就告诉 Agent“没有”。
-4. Agent 自动保存本地配置并确认它不会被 Git 提交。
-
-对 Agent 说：
-
-```text
-Use $wechat-article-collector 采集「公众号名称」的历史文章，保存到 output/wechat-articles。
-```
-
-也可以直接运行脚本：
-
-```bash
-python3 wechat-article-collector/scripts/collect_wechat_articles.py \
-  --account "公众号名称" \
-  --output-dir output/wechat-articles
-```
-
-输出内容包括每篇文章的 Markdown、`账号概览.md` 和 `文章数据.csv`。
-
-### 2. 生成微信公众号漫画长图
-
-适合把一个主题做成可发布的公众号漫画长图。
-
-对 Agent 说：
-
-```text
-Use $wechat-official-account-comic 把「为什么下午三点最容易困」做成暖白手绘漫画的公众号漫画长图。
-```
-
-如果你有豆包/Seedream API key，可以让 Agent 使用批量生图脚本。如果没有，也可以让 Agent 使用它自己可用的图片生成能力先生成 panels，再用本仓库脚本拼接长图。
-
-拼接脚本示例：
-
-```bash
-python3 wechat-official-account-comic/scripts/build_long_comic.py \
-  --spec output/comics/文章标题/article.json \
-  --out output/comics/文章标题/文章标题-公众号漫画长图.png
-```
-
-#### 公众号漫画风格库
-
-`wechat-official-account-comic` 用来沉淀和测试新增漫画风格，适合把可复用风格做成 profile，让使用者只选风格名就能生成长图。
-
-当前风格统一由 `wechat-official-account-comic/styles/*.json` 管理：
-
-| 风格名 | 适合主题 | 配置文件 |
-| --- | --- | --- |
-| `暖白手绘漫画` | 科普、生活解释、成长和情绪安抚；图片无字，正文由布局脚本渲染 | `wechat-official-account-comic/styles/warm-white-handdrawn.json` |
-| `蓝栏柔彩漫画` | 关系、心理、成长和生活选择；蓝色叙事栏和红色强调由布局脚本渲染 | `wechat-official-account-comic/styles/blue-bar-soft-color.json` |
-| `绿底粗线漫画` | 职场对比、内卷、边界感；panel 内标题、对白、气泡和聊天框文字由 AI 直接生成 | `wechat-official-account-comic/styles/green-bold-line.json` |
-| `小林诗意治愈` / `小林风格1` | 白底水彩治愈，自然隐喻、诗意短句 | `wechat-official-account-comic/styles/xiaolin-healing.json` |
-| `小林生活讽刺` / `小林风格2` | 白底水彩人物小品，成年人生活观察、家庭和职场压力、轻讽刺 punchline | `wechat-official-account-comic/styles/xiaolin-life-satire.json` |
-| `小林奇想涂鸦` / `小林风格3` | 小幅涂鸦、可爱动物、怪物、拟人化物件、脑洞哲思短句 | `wechat-official-account-comic/styles/xiaolin-whimsy-doodle.json` |
-
-小林系风格的正常生成方式是从已保存的 profile 做 prompt-only 生成，不需要每次附训练截图。除非是在重新训练或排查风格漂移，否则不要把参考截图传给生图模型。小林系源图本身应包含插画和手写中文 caption，拼接脚本只负责排列红色编号和完整图片块。
-
-公众号漫画拼接脚本示例：
-
-```bash
-python3 wechat-official-account-comic/scripts/build_long_comic.py \
-  --spec output/comics/文章标题/article.json \
-  --out output/comics/文章标题/文章标题-公众号漫画长图.png
-```
-
-验收时必须逐字检查图片里的 caption，并拒绝二维码、署名、账号名、参考图固定文案、乱码、额外文字或水印。本地验证样例包括：
-
-- `output/comics/成年人最累的是装作没事/成年人最累的是装作没事-小林风格2测试长图.png`，尺寸 `600x6859`。
-- `output/comics/越长大越想把日子过轻一点/越长大越想把日子过轻一点-小林风格3测试长图.png`，尺寸 `600x9479`。
-
-这些生成图片是本地验收产物，不应作为通用模板或账号素材提交到仓库。
-
-### 3. 生成 macOS 应用图标
-
-适合把一张图或一个图标创意做成 macOS `.icns`。
-
-对 Agent 说：
-
-```text
-Use $macos-app-icon 根据这张图片生成 macOS .icns 图标，并给我灰底预览。
-```
-
-Agent 会优先使用系统工具和 ImageMagick 处理图标，并输出 `.icns` 和预览图。
-
-### 4. 做人生方向访谈
-
-适合你不知道该问自己什么问题，但想系统梳理方向、优势和验证实验。
-
-对 Agent 说：
-
-```text
-Use $life-interview-planner 和我做一次 60 分钟的人生方向访谈。
-```
-
-它会一轮一轮提问，记录具体经历、能量信号、能力模式、价值观、约束和可测试方向。
-
-### 5. 设计 AI 自媒体视频封面
-
-适合给 AI 工具、教程、观点类视频做封面。
-
-第一次用前，打开 `ai-creator-cover/profile.md`，把账号方向、品牌色、分类标签改成自己的。如果你要真人出镜，把 2-4 张参考照片放到本地安装目录里的：
-
-```text
-ai-creator-cover/assets/faces/<你的名字>/
-```
-
-这些照片已被 `.gitignore` 忽略，不应该提交到公开仓库。
-
-对 Agent 说：
-
-```text
-Use $ai-creator-cover 帮我设计一张 AI 自媒体视频封面。这期视频讲 Claude 的新功能。
-```
-
-它会先访谈，再给封面方案卡。你确认后，它会编译中文生图提示词；只有你明确说“生成图片”时，才会调用图片生成能力。
-
-## 开发和维护
-
-常用检查命令：
-
-```bash
-git status --short
-python3 -m py_compile wechat-article-collector/scripts/collect_wechat_articles.py
-python3 -m py_compile wechat-official-account-comic/scripts/build_long_comic.py
-python3 -m py_compile wechat-official-account-comic/scripts/generate_panels_seedream.py
-python3 -m py_compile ai-creator-cover/scripts/download_covers.py
-```
-
-新增 skill 时建议包含：
-
-```text
-skill-name/
-  SKILL.md
-  agents/ or config/
-  scripts/
-  docs/ or references/
-  templates/
-```
-
-`SKILL.md` 需要有 frontmatter：
-
-```yaml
----
-name: example-skill
-description: Short trigger-focused description.
----
-```
+本仓库不维护统一依赖文件；需要依赖的 Skill 会在自己的目录中说明。
 
 ## 开源许可
 
-本项目使用 MIT License，见 [LICENSE](./LICENSE)。
+[MIT License](./LICENSE)
