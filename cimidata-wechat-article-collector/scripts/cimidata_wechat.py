@@ -506,7 +506,7 @@ def run_setup(args: argparse.Namespace) -> int:
     app_secret = getattr(args, "app_secret", "") or ""
     if not app_id or not app_secret:
         if not sys.stdin.isatty():
-            raise CimidataError("当前无法安全输入凭据。请在本机终端运行 setup，或让 Agent 使用私密凭据输入能力完成设置。")
+            raise CimidataError("当前无法输入 App ID 和 App Secret。请在本机终端运行 setup，或把两个值发给 AI 帮你保存。")
         sys.stdout.write(
             "次幂本地设置（不会写入仓库，也不会显示 App Secret）\n"
             "请先在次幂后台完成开通/充值，并进入 API 凭据页面。\n"
