@@ -46,7 +46,7 @@ https://github.com/wangyong5609/wangyong-skills
 ```
 
 ```text
-帮我采集「公众号名称」2021 年发布的全部文章，只要正文。
+帮我采集「公众号名称」2026 年发布的全部文章，只要正文。
 ```
 
 ```text
