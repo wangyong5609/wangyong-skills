@@ -83,15 +83,15 @@ class CimidataWechatTests(unittest.TestCase):
         self.assertIsNone(article_request.get_header("Cookie"))
         self.assertEqual(guard.spent, 0.01)
 
-    def test_article_body_and_cover_are_projected_from_article_info(self) -> None:
+    def test_article_body_uses_cheapest_body_endpoint_and_cover_uses_info(self) -> None:
         body_args = collector.build_parser().parse_args(["article-body", "--url", "https://example/article"])
         operation, body = collector.operation_for_args(body_args)
-        self.assertEqual(operation.name, "article-info")
+        self.assertEqual(operation.name, "article-full")
         self.assertEqual(body, {"url": "https://example/article"})
 
         cover_args = collector.build_parser().parse_args(["article-cover", "--url", "https://example/article"])
         cover_operation, cover_body = collector.operation_for_args(cover_args)
-        self.assertEqual(cover_operation, operation)
+        self.assertEqual(cover_operation.name, "article-info")
         self.assertEqual(cover_body, body)
 
     def test_comments_are_deidentified_sorted_and_capped(self) -> None:
@@ -190,6 +190,497 @@ class CimidataWechatTests(unittest.TestCase):
             rendered = markdown_files[0].read_text(encoding="utf-8")
             self.assertIn("高赞一级评论", rendered)
             self.assertNotIn("nick_name", rendered)
+
+    def test_date_window_includes_the_whole_end_date(self) -> None:
+        start, end = collector.parse_date_window("2021-01-01", "2021-12-31")
+        self.assertEqual(end - start, 365 * 24 * 60 * 60)
+
+    def test_range_dry_run_reports_a_bounded_maximum_without_credentials(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            args = collector.build_parser().parse_args(
+                [
+                    "collect-range",
+                    "--wxid",
+                    "gh_example",
+                    "--start-date",
+                    "2021-01-01",
+                    "--end-date",
+                    "2021-12-31",
+                    "--max-pages",
+                    "2",
+                    "--max-articles",
+                    "3",
+                    "--max-cost",
+                    "0.13",
+                    "--state-file",
+                    str(Path(directory) / "index.sqlite3"),
+                    "--dry-run",
+                ]
+            )
+            output = io.StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(collector.run_collect_range(args), 0)
+
+        plan = json.loads(output.getvalue())
+        self.assertEqual(plan["status"], "dry_run")
+        self.assertEqual(plan["estimated_max_cost_yuan"], 0.10)
+        self.assertEqual(plan["breakdown"]["history_pages"], 2)
+        self.assertEqual(plan["breakdown"]["article_bodies"], 0)
+
+    def test_range_metadata_phase_does_not_budget_or_buy_article_bodies(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            args = collector.build_parser().parse_args(
+                [
+                    "collect-range",
+                    "--wxid",
+                    "gh_example",
+                    "--start-date",
+                    "2021-01-01",
+                    "--end-date",
+                    "2021-12-31",
+                    "--max-pages",
+                    "2",
+                    "--max-articles",
+                    "500",
+                    "--metadata-only",
+                    "--max-cost",
+                    "0.10",
+                    "--state-file",
+                    str(Path(directory) / "index.sqlite3"),
+                    "--dry-run",
+                ]
+            )
+            output = io.StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(collector.run_collect_range(args), 0)
+
+        plan = json.loads(output.getvalue())
+        self.assertEqual(plan["estimated_max_cost_yuan"], 0.10)
+        self.assertEqual(plan["breakdown"]["article_bodies"], 0)
+
+    def test_range_scan_resumes_then_reuses_cached_body_without_api_calls(self) -> None:
+        recent_page = {
+            "code": 200,
+            "data": {
+                "items": [
+                    {
+                        "title": "新文章",
+                        "content_url": "https://mp.weixin.qq.com/s/new",
+                        "published_at": "2026-08-21T10:00:00",
+                    }
+                ],
+                "last_id": "cursor-1",
+            },
+        }
+        target_page = {
+            "code": 200,
+            "data": {
+                "items": [
+                    {
+                        "title": "目标文章",
+                        "content_url": "https://mp.weixin.qq.com/s/target",
+                        "published_at": "2021-06-01T10:00:00",
+                    },
+                    {
+                        "title": "更早文章",
+                        "content_url": "https://mp.weixin.qq.com/s/older",
+                        "published_at": "2020-12-31T10:00:00",
+                    },
+                ],
+                "last_id": "cursor-2",
+            },
+        }
+        body_payload = {"code": 200, "data": {"html": "<p>目标正文</p>"}}
+
+        with tempfile.TemporaryDirectory() as directory:
+            state_file = Path(directory) / "index.sqlite3"
+            output_dir = Path(directory) / "archive"
+            base = [
+                "collect-range",
+                "--wxid",
+                "gh_example",
+                "--nickname",
+                "示例号",
+                "--start-date",
+                "2021-01-01",
+                "--end-date",
+                "2021-12-31",
+                "--state-file",
+                str(state_file),
+                "--output-dir",
+                str(output_dir),
+                "--confirm-paid",
+            ]
+
+            first_args = collector.build_parser().parse_args(
+                [*base, "--max-pages", "1", "--max-articles", "10", "--max-cost", "0.05"]
+            )
+            first_output = io.StringIO()
+            with (
+                mock.patch.object(collector, "load_credentials", return_value=("app", "secret")),
+                mock.patch.object(collector.CimidataClient, "call", return_value=recent_page) as first_call,
+                redirect_stdout(first_output),
+            ):
+                self.assertEqual(collector.run_collect_range(first_args), 0)
+            first_result = json.loads(first_output.getvalue())
+            self.assertEqual(first_result["status"], "partial")
+            self.assertEqual(first_result["reason"], "budget_exhausted")
+            self.assertEqual(first_call.call_count, 1)
+
+            second_args = collector.build_parser().parse_args(
+                [*base, "--max-pages", "2", "--max-articles", "10", "--max-cost", "0.10"]
+            )
+            second_output = io.StringIO()
+            with (
+                mock.patch.object(collector, "load_credentials", return_value=("app", "secret")),
+                mock.patch.object(collector.CimidataClient, "call", return_value=target_page) as second_call,
+                redirect_stdout(second_output),
+            ):
+                self.assertEqual(collector.run_collect_range(second_args), 0)
+            second_result = json.loads(second_output.getvalue())
+            self.assertEqual(second_result["status"], "metadata_ready")
+            self.assertEqual(second_result["article_count"], 1)
+            self.assertEqual(second_call.call_args_list[0].args[1]["last_id"], "cursor-1")
+
+            body_args = collector.build_parser().parse_args(
+                [*base, "--max-pages", "2", "--max-articles", "10", "--max-cost", "0.01"]
+            )
+            body_output = io.StringIO()
+            with (
+                mock.patch.object(collector, "load_credentials", return_value=("app", "secret")),
+                mock.patch.object(collector.CimidataClient, "call", return_value=body_payload) as body_call,
+                redirect_stdout(body_output),
+            ):
+                self.assertEqual(collector.run_collect_range(body_args), 0)
+            body_result = json.loads(body_output.getvalue())
+            self.assertEqual(body_result["status"], "success")
+            self.assertEqual(body_call.call_args_list[0].args[0].name, "article-full")
+
+            cached_args = collector.build_parser().parse_args(
+                [*base, "--max-pages", "2", "--max-articles", "10", "--max-cost", "0"]
+            )
+            cached_output = io.StringIO()
+            with (
+                mock.patch.object(collector, "load_credentials", side_effect=AssertionError("credentials should not be read")),
+                mock.patch.object(collector.CimidataClient, "call", side_effect=AssertionError("API should not be called")),
+                redirect_stdout(cached_output),
+            ):
+                self.assertEqual(collector.run_collect_range(cached_args), 0)
+            cached_result = json.loads(cached_output.getvalue())
+            self.assertEqual(cached_result["status"], "success")
+            self.assertEqual(cached_result["estimated_cost_yuan"], 0.0)
+
+    def test_range_scan_stops_on_repeated_page_without_buying_bodies(self) -> None:
+        first_page = {
+            "code": 200,
+            "data": {
+                "items": [
+                    {
+                        "title": "第一页",
+                        "content_url": "https://mp.weixin.qq.com/s/first",
+                        "published_at": "2026-08-21T10:00:00",
+                    },
+                    {
+                        "title": "已证明覆盖边界",
+                        "content_url": "https://mp.weixin.qq.com/s/proven-boundary",
+                        "published_at": "2025-08-21T10:00:00",
+                    }
+                ],
+                "last_id": "same-cursor",
+            },
+        }
+        stuck_page = {
+            "code": 200,
+            "data": {
+                "items": [
+                    {
+                        "title": "已付费但游标未前进",
+                        "content_url": "https://mp.weixin.qq.com/s/stuck",
+                        "published_at": "2020-12-31T10:00:00",
+                    }
+                ],
+                "last_id": "same-cursor",
+            },
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            args = collector.build_parser().parse_args(
+                [
+                    "collect-range",
+                    "--wxid",
+                    "gh_example",
+                    "--start-date",
+                    "2021-01-01",
+                    "--end-date",
+                    "2021-12-31",
+                    "--max-pages",
+                    "2",
+                    "--max-articles",
+                    "10",
+                    "--max-cost",
+                    "0.20",
+                    "--state-file",
+                    str(Path(directory) / "index.sqlite3"),
+                    "--output-dir",
+                    str(Path(directory) / "archive"),
+                    "--confirm-paid",
+                ]
+            )
+            output = io.StringIO()
+            with (
+                mock.patch.object(collector, "load_credentials", return_value=("app", "secret")),
+                mock.patch.object(collector.CimidataClient, "call", side_effect=[first_page, stuck_page]) as api_call,
+                redirect_stdout(output),
+            ):
+                self.assertEqual(collector.run_collect_range(args), 0)
+
+            blocked_output = io.StringIO()
+            with (
+                mock.patch.object(collector, "load_credentials", side_effect=AssertionError("blocked scan should not read credentials")),
+                mock.patch.object(collector.CimidataClient, "call", side_effect=AssertionError("blocked scan should not call API")),
+                redirect_stdout(blocked_output),
+            ):
+                self.assertEqual(collector.run_collect_range(args), 0)
+
+            cached_args = collector.build_parser().parse_args(
+                [
+                    "collect-range",
+                    "--wxid",
+                    "gh_example",
+                    "--start-date",
+                    "2025-08-22",
+                    "--end-date",
+                    "2026-08-21",
+                    "--max-pages",
+                    "1",
+                    "--max-articles",
+                    "0",
+                    "--metadata-only",
+                    "--max-cost",
+                    "0",
+                    "--state-file",
+                    str(Path(directory) / "index.sqlite3"),
+                ]
+            )
+            cached_output = io.StringIO()
+            with (
+                mock.patch.object(collector, "load_credentials", side_effect=AssertionError("covered range should not read credentials")),
+                mock.patch.object(collector.CimidataClient, "call", side_effect=AssertionError("covered range should not call API")),
+                redirect_stdout(cached_output),
+            ):
+                self.assertEqual(collector.run_collect_range(cached_args), 0)
+
+        result = json.loads(output.getvalue())
+        self.assertEqual(result["status"], "partial")
+        self.assertEqual(result["reason"], "repeated_page")
+        self.assertTrue(result["oldest_reached"].startswith("2025-08-21"))
+        self.assertEqual(api_call.call_count, 2)
+        blocked_result = json.loads(blocked_output.getvalue())
+        self.assertEqual(blocked_result["reason"], "repeated_page")
+        self.assertEqual(blocked_result["pages_used"], 0)
+        cached_result = json.loads(cached_output.getvalue())
+        self.assertEqual(cached_result["status"], "metadata_ready")
+        self.assertEqual(cached_result["estimated_cost_yuan"], 0.0)
+
+    def test_range_state_location_is_stable_across_output_directories(self) -> None:
+        first = collector.build_parser().parse_args(
+            [
+                "collect-range",
+                "--wxid",
+                "gh_example",
+                "--start-date",
+                "2021-01-01",
+                "--end-date",
+                "2021-12-31",
+                "--output-dir",
+                "/tmp/archive-one",
+            ]
+        )
+        second = collector.build_parser().parse_args(
+            [
+                "collect-range",
+                "--wxid",
+                "gh_example",
+                "--start-date",
+                "2021-01-01",
+                "--end-date",
+                "2021-12-31",
+                "--output-dir",
+                "/tmp/archive-two",
+            ]
+        )
+        self.assertEqual(collector.range_state_path(first), collector.range_state_path(second))
+
+    def test_range_exact_nickname_uses_lower_cost_account_detail(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            args = collector.build_parser().parse_args(
+                [
+                    "collect-range",
+                    "--nickname",
+                    "示例号",
+                    "--start-date",
+                    "2021-01-01",
+                    "--end-date",
+                    "2021-12-31",
+                    "--max-pages",
+                    "2",
+                    "--metadata-only",
+                    "--max-cost",
+                    "0.14",
+                    "--state-file",
+                    str(Path(directory) / "index.sqlite3"),
+                    "--dry-run",
+                ]
+            )
+            output = io.StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(collector.run_collect_range(args), 0)
+
+        plan = json.loads(output.getvalue())
+        self.assertEqual(plan["estimated_max_cost_yuan"], 0.14)
+        self.assertEqual(plan["breakdown"]["account_resolution_operation"], "account-info")
+
+    def test_range_history_error_reports_cost_and_saved_progress(self) -> None:
+        def fail_after_charging(client, operation, body):
+            del body
+            client.guard.start(operation)
+            raise collector.CimidataError("上游暂时失败")
+
+        with tempfile.TemporaryDirectory() as directory:
+            args = collector.build_parser().parse_args(
+                [
+                    "collect-range",
+                    "--wxid",
+                    "gh_example",
+                    "--start-date",
+                    "2021-01-01",
+                    "--end-date",
+                    "2021-12-31",
+                    "--max-pages",
+                    "1",
+                    "--max-articles",
+                    "0",
+                    "--metadata-only",
+                    "--max-cost",
+                    "0.05",
+                    "--state-file",
+                    str(Path(directory) / "index.sqlite3"),
+                    "--confirm-paid",
+                ]
+            )
+            output = io.StringIO()
+            with (
+                mock.patch.object(collector, "load_credentials", return_value=("app", "secret")),
+                mock.patch.object(collector.CimidataClient, "call", new=fail_after_charging),
+                redirect_stdout(output),
+            ):
+                self.assertEqual(collector.run_collect_range(args), 2)
+
+        result = json.loads(output.getvalue())
+        self.assertEqual(result["status"], "partial")
+        self.assertEqual(result["reason"], "history_failed")
+        self.assertEqual(result["estimated_cost_yuan"], 0.05)
+        self.assertTrue(result["resume_saved"])
+
+    def test_range_invalid_page_is_saved_and_not_bought_again(self) -> None:
+        invalid_page = {"code": 200, "data": {"items": [], "last_id": "unexpected-next"}}
+        with tempfile.TemporaryDirectory() as directory:
+            args = collector.build_parser().parse_args(
+                [
+                    "collect-range",
+                    "--wxid",
+                    "gh_example",
+                    "--start-date",
+                    "2021-01-01",
+                    "--end-date",
+                    "2021-12-31",
+                    "--max-pages",
+                    "1",
+                    "--max-articles",
+                    "0",
+                    "--metadata-only",
+                    "--max-cost",
+                    "0.05",
+                    "--state-file",
+                    str(Path(directory) / "index.sqlite3"),
+                    "--confirm-paid",
+                ]
+            )
+            first_output = io.StringIO()
+            with (
+                mock.patch.object(collector, "load_credentials", return_value=("app", "secret")),
+                mock.patch.object(collector.CimidataClient, "call", return_value=invalid_page) as first_call,
+                redirect_stdout(first_output),
+            ):
+                self.assertEqual(collector.run_collect_range(args), 0)
+
+            blocked_output = io.StringIO()
+            with (
+                mock.patch.object(collector, "load_credentials", side_effect=AssertionError("blocked scan should not read credentials")),
+                mock.patch.object(collector.CimidataClient, "call", side_effect=AssertionError("invalid page should not be repurchased")),
+                redirect_stdout(blocked_output),
+            ):
+                self.assertEqual(collector.run_collect_range(args), 0)
+
+        self.assertEqual(first_call.call_count, 1)
+        self.assertEqual(json.loads(first_output.getvalue())["reason"], "invalid_page")
+        blocked = json.loads(blocked_output.getvalue())
+        self.assertEqual(blocked["reason"], "invalid_page")
+        self.assertEqual(blocked["pages_used"], 0)
+
+    def test_range_ending_today_can_complete_before_midnight(self) -> None:
+        today = collector.dt.datetime.now(collector.SHANGHAI_TZ).date()
+        yesterday = today - collector.dt.timedelta(days=1)
+        page = {
+            "code": 200,
+            "data": {
+                "items": [
+                    {
+                        "title": "今天",
+                        "content_url": "https://mp.weixin.qq.com/s/today",
+                        "published_at": f"{today.isoformat()}T10:00:00",
+                    },
+                    {
+                        "title": "昨天",
+                        "content_url": "https://mp.weixin.qq.com/s/yesterday",
+                        "published_at": f"{yesterday.isoformat()}T10:00:00",
+                    },
+                ],
+                "last_id": "next-page",
+            },
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            args = collector.build_parser().parse_args(
+                [
+                    "collect-range",
+                    "--wxid",
+                    "gh_example",
+                    "--start-date",
+                    today.isoformat(),
+                    "--end-date",
+                    today.isoformat(),
+                    "--max-pages",
+                    "1",
+                    "--max-articles",
+                    "0",
+                    "--metadata-only",
+                    "--max-cost",
+                    "0.05",
+                    "--state-file",
+                    str(Path(directory) / "index.sqlite3"),
+                    "--confirm-paid",
+                ]
+            )
+            output = io.StringIO()
+            with (
+                mock.patch.object(collector, "load_credentials", return_value=("app", "secret")),
+                mock.patch.object(collector.CimidataClient, "call", return_value=page),
+                redirect_stdout(output),
+            ):
+                self.assertEqual(collector.run_collect_range(args), 0)
+
+        result = json.loads(output.getvalue())
+        self.assertEqual(result["status"], "metadata_ready")
+        self.assertEqual(result["article_count"], 1)
 
 
 if __name__ == "__main__":

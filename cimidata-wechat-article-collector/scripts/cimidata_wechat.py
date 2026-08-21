@@ -7,10 +7,12 @@ import argparse
 import csv
 import datetime as dt
 import getpass
+import hashlib
 import html
 import json
 import os
 import re
+import sqlite3
 import sys
 import time
 import urllib.error
@@ -20,6 +22,7 @@ from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Iterable
+from zoneinfo import ZoneInfo
 
 
 API_BASE = "https://api.cimidata.com"
@@ -27,6 +30,7 @@ DEFAULT_OUTPUT_DIR = Path.cwd() / "output" / "cimidata-wechat"
 COMMENT_MIN_LIKES = 10
 COMMENT_LIMIT = 10
 CONFIG_FILE_NAME = ".env"
+SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
 
 
 @dataclass(frozen=True)
@@ -43,7 +47,7 @@ OPERATIONS = {
     "account-info": Operation("account-info", "/api/v2/accounts/detail", 0.04, "获取公众号基本信息"),
     "account-day": Operation("account-day", "/api/v2/articles/current", 0.04, "获取公众号当天发文"),
     "account-history": Operation("account-history", "/api/v2/articles/history", 0.05, "获取公众号历史文章"),
-    "article-full": Operation("article-full", "/api/v2/articles/detail", 0.01, "获取完整文章 HTML"),
+    "article-full": Operation("article-full", "/api/v3/articles/detail", 0.01, "获取文章正文 HTML"),
     "article-info": Operation("article-info", "/api/v2/articles/info", 0.02, "获取文章与所属账号信息", 0.5),
     "article-metrics": Operation("article-metrics", "/api/v2/articles/data2", 0.03, "获取完整互动指标", 3.0),
     "article-metrics-basic": Operation("article-metrics-basic", "/api/v2/articles/data", 0.02, "获取基础互动指标", 3.0),
@@ -235,6 +239,59 @@ def pick_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
     return []
 
 
+def parse_date_window(start_date: str, end_date: str) -> tuple[int, int]:
+    try:
+        start = dt.date.fromisoformat(start_date)
+        end = dt.date.fromisoformat(end_date)
+    except ValueError as exc:
+        raise CimidataError("日期必须使用 YYYY-MM-DD，例如 2021-01-01") from exc
+    if end < start:
+        raise CimidataError("结束日期不能早于开始日期")
+    start_at = dt.datetime.combine(start, dt.time.min, SHANGHAI_TZ)
+    end_at = dt.datetime.combine(end + dt.timedelta(days=1), dt.time.min, SHANGHAI_TZ)
+    return int(start_at.timestamp()), int(end_at.timestamp())
+
+
+def parse_publish_timestamp(value: Any) -> int:
+    text = str(value or "").strip()
+    if not text:
+        raise CimidataError("历史列表中的 published_at 为空")
+    try:
+        parsed = dt.datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise CimidataError(f"无法解析文章发布时间：{text[:40]}") from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=SHANGHAI_TZ)
+    return int(parsed.timestamp())
+
+
+def timestamp_text(value: int | None) -> str:
+    if value is None:
+        return ""
+    return dt.datetime.fromtimestamp(value, SHANGHAI_TZ).isoformat(timespec="seconds")
+
+
+def article_key(url: str) -> str:
+    normalized = normalize_url(url)
+    parsed = urllib.parse.urlsplit(normalized)
+    query = urllib.parse.parse_qs(parsed.query)
+    stable_parts = [query.get(name, [""])[0] for name in ("__biz", "mid", "idx", "sn")]
+    if all(stable_parts):
+        source = "|".join(stable_parts)
+    else:
+        source = urllib.parse.urlunsplit((parsed.scheme.lower(), parsed.netloc.lower(), parsed.path, parsed.query, ""))
+    return hashlib.sha256(source.encode("utf-8")).hexdigest()
+
+
+def page_fingerprint(items: list[dict[str, Any]]) -> str:
+    values = sorted(
+        article_key(str(item.get("content_url") or item.get("url") or ""))
+        for item in items
+        if item.get("content_url") or item.get("url")
+    )
+    return hashlib.sha256("\n".join(values).encode("utf-8")).hexdigest()
+
+
 def metric_projection(payload: dict[str, Any]) -> dict[str, int]:
     data = payload.get("data") or {}
     if not isinstance(data, dict):
@@ -284,6 +341,315 @@ class CostGuard:
         self.calls.append(
             {"operation": operation.name, "path": operation.path, "price_yuan": operation.price_yuan}
         )
+
+
+class RangeIndex:
+    """Crash-safe local index for paid cursor scans and article bodies."""
+
+    def __init__(self, path: Path | None) -> None:
+        if path is None:
+            database = ":memory:"
+        else:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            database = str(path)
+        self.connection = sqlite3.connect(database)
+        self.connection.row_factory = sqlite3.Row
+        self.connection.execute("PRAGMA foreign_keys = ON")
+        if path is not None:
+            self.connection.execute("PRAGMA journal_mode = WAL")
+        self.connection.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS account_index (
+                wxid TEXT PRIMARY KEY,
+                nickname TEXT NOT NULL DEFAULT '',
+                coverage_start_ts INTEGER,
+                coverage_end_ts INTEGER,
+                tail_cursor TEXT,
+                history_exhausted INTEGER NOT NULL DEFAULT 0,
+                order_valid INTEGER NOT NULL DEFAULT 1,
+                head_resume_cursor TEXT,
+                head_started_ts INTEGER,
+                blocked_reason TEXT NOT NULL DEFAULT '',
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS account_index_nickname
+                ON account_index(nickname);
+
+            CREATE TABLE IF NOT EXISTS article_index (
+                wxid TEXT NOT NULL,
+                article_key TEXT NOT NULL,
+                article_url TEXT NOT NULL,
+                title TEXT NOT NULL,
+                publish_time TEXT NOT NULL,
+                published_ts INTEGER NOT NULL,
+                digest TEXT NOT NULL DEFAULT '',
+                cover TEXT NOT NULL DEFAULT '',
+                markdown TEXT NOT NULL DEFAULT '',
+                body_status TEXT NOT NULL DEFAULT 'missing',
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (wxid, article_key),
+                FOREIGN KEY (wxid) REFERENCES account_index(wxid)
+            );
+
+            CREATE INDEX IF NOT EXISTS article_index_range
+                ON article_index(wxid, published_ts);
+
+            CREATE TABLE IF NOT EXISTS history_page (
+                wxid TEXT NOT NULL,
+                cursor_in TEXT NOT NULL,
+                cursor_out TEXT,
+                fingerprint TEXT NOT NULL,
+                min_published_ts INTEGER,
+                max_published_ts INTEGER,
+                fetched_at TEXT NOT NULL,
+                PRIMARY KEY (wxid, fingerprint)
+            );
+            """
+        )
+        self.connection.commit()
+
+    def __enter__(self) -> RangeIndex:
+        return self
+
+    def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> None:
+        del exc_type, exc, traceback
+        self.connection.close()
+
+    @staticmethod
+    def now_text() -> str:
+        return dt.datetime.now().astimezone().isoformat(timespec="seconds")
+
+    def account(self, wxid: str) -> dict[str, Any] | None:
+        row = self.connection.execute(
+            "SELECT * FROM account_index WHERE wxid = ?",
+            (wxid,),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def cached_wxid(self, nickname: str) -> str:
+        rows = self.connection.execute(
+            "SELECT wxid FROM account_index WHERE nickname = ? ORDER BY updated_at DESC LIMIT 2",
+            (nickname,),
+        ).fetchall()
+        return str(rows[0]["wxid"]) if len(rows) == 1 else ""
+
+    def save_account(self, wxid: str, nickname: str = "") -> None:
+        self.connection.execute(
+            """
+            INSERT INTO account_index(wxid, nickname, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(wxid) DO UPDATE SET
+                nickname = CASE WHEN excluded.nickname <> '' THEN excluded.nickname ELSE account_index.nickname END,
+                updated_at = excluded.updated_at
+            """,
+            (wxid, nickname, self.now_text()),
+        )
+        self.connection.commit()
+
+    def covers(self, wxid: str, start_ts: int, end_ts: int) -> bool:
+        state = self.account(wxid)
+        if not state or state["coverage_end_ts"] is None or int(state["coverage_end_ts"]) < end_ts:
+            return False
+        if int(state["history_exhausted"]):
+            return True
+        return (
+            bool(state["order_valid"])
+            and state["coverage_start_ts"] is not None
+            and int(state["coverage_start_ts"]) <= start_ts
+        )
+
+    def has_page(self, wxid: str, fingerprint: str) -> bool:
+        row = self.connection.execute(
+            "SELECT 1 FROM history_page WHERE wxid = ? AND fingerprint = ?",
+            (wxid, fingerprint),
+        ).fetchone()
+        return row is not None
+
+    def block(self, wxid: str, reason: str) -> None:
+        self.connection.execute(
+            "UPDATE account_index SET blocked_reason = ?, updated_at = ? WHERE wxid = ?",
+            (reason, self.now_text(), wxid),
+        )
+        self.connection.commit()
+
+    def _save_articles(self, wxid: str, items: list[dict[str, Any]]) -> tuple[int | None, int | None]:
+        timestamps: list[int] = []
+        now = self.now_text()
+        for item in items:
+            url = normalize_url(item.get("content_url") or item.get("url") or "")
+            if not url:
+                continue
+            published_ts = parse_publish_timestamp(item.get("published_at") or item.get("post_time"))
+            timestamps.append(published_ts)
+            self.connection.execute(
+                """
+                INSERT INTO article_index(
+                    wxid, article_key, article_url, title, publish_time, published_ts,
+                    digest, cover, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(wxid, article_key) DO UPDATE SET
+                    article_url = excluded.article_url,
+                    title = excluded.title,
+                    publish_time = excluded.publish_time,
+                    published_ts = excluded.published_ts,
+                    digest = excluded.digest,
+                    cover = excluded.cover,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    wxid,
+                    article_key(url),
+                    url,
+                    str(item.get("title") or "未命名文章"),
+                    str(item.get("published_at") or item.get("post_time") or ""),
+                    published_ts,
+                    str(item.get("digest") or ""),
+                    normalize_url(item.get("cover") or ""),
+                    now,
+                ),
+            )
+        return (min(timestamps), max(timestamps)) if timestamps else (None, None)
+
+    def _save_page(
+        self,
+        wxid: str,
+        cursor_in: str,
+        cursor_out: str | None,
+        items: list[dict[str, Any]],
+        fingerprint: str,
+    ) -> tuple[int | None, int | None, str]:
+        minimum, maximum = self._save_articles(wxid, items)
+        now = self.now_text()
+        self.connection.execute(
+            """
+            INSERT OR IGNORE INTO history_page(
+                wxid, cursor_in, cursor_out, fingerprint,
+                min_published_ts, max_published_ts, fetched_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (wxid, cursor_in, cursor_out, fingerprint, minimum, maximum, now),
+        )
+        return minimum, maximum, now
+
+    def save_observed_page(
+        self,
+        wxid: str,
+        cursor_in: str,
+        cursor_out: str | None,
+        items: list[dict[str, Any]],
+        fingerprint: str,
+    ) -> None:
+        self._save_page(wxid, cursor_in, cursor_out, items, fingerprint)
+        self.connection.commit()
+
+    def save_tail_page(
+        self,
+        wxid: str,
+        nickname: str,
+        cursor_in: str,
+        cursor_out: str | None,
+        items: list[dict[str, Any]],
+        fingerprint: str,
+        coverage_end_ts: int,
+        order_valid: bool,
+    ) -> None:
+        self.save_account(wxid, nickname)
+        minimum, _, now = self._save_page(wxid, cursor_in, cursor_out, items, fingerprint)
+        state = self.account(wxid) or {}
+        previous_start = state.get("coverage_start_ts")
+        coverage_start = minimum if previous_start is None else min(int(previous_start), minimum or int(previous_start))
+        exhausted = cursor_out in (None, "")
+        self.connection.execute(
+            """
+            UPDATE account_index SET
+                coverage_start_ts = ?,
+                coverage_end_ts = COALESCE(coverage_end_ts, ?),
+                tail_cursor = ?,
+                history_exhausted = ?,
+                order_valid = ?,
+                updated_at = ?
+            WHERE wxid = ?
+            """,
+            (
+                0 if exhausted else coverage_start,
+                coverage_end_ts,
+                cursor_out,
+                int(exhausted),
+                int(order_valid),
+                now,
+                wxid,
+            ),
+        )
+        self.connection.commit()
+
+    def save_head_page(
+        self,
+        wxid: str,
+        cursor_in: str,
+        cursor_out: str | None,
+        items: list[dict[str, Any]],
+        fingerprint: str,
+        started_ts: int,
+    ) -> tuple[int | None, int | None]:
+        minimum, maximum, now = self._save_page(wxid, cursor_in, cursor_out, items, fingerprint)
+        self.connection.execute(
+            """
+            UPDATE account_index SET
+                head_resume_cursor = ?,
+                head_started_ts = ?,
+                updated_at = ?
+            WHERE wxid = ?
+            """,
+            (cursor_out, started_ts, now, wxid),
+        )
+        self.connection.commit()
+        return minimum, maximum
+
+    def complete_head_sync(self, wxid: str, coverage_end_ts: int) -> None:
+        self.connection.execute(
+            """
+            UPDATE account_index SET
+                coverage_end_ts = ?,
+                head_resume_cursor = NULL,
+                head_started_ts = NULL,
+                updated_at = ?
+            WHERE wxid = ?
+            """,
+            (coverage_end_ts, self.now_text(), wxid),
+        )
+        self.connection.commit()
+
+    def range_articles(self, wxid: str, start_ts: int, end_ts: int) -> list[dict[str, Any]]:
+        rows = self.connection.execute(
+            """
+            SELECT * FROM article_index
+            WHERE wxid = ? AND published_ts >= ? AND published_ts < ?
+            ORDER BY published_ts DESC, article_key
+            """,
+            (wxid, start_ts, end_ts),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def missing_body_count(self, wxid: str, start_ts: int, end_ts: int) -> int:
+        row = self.connection.execute(
+            """
+            SELECT COUNT(*) AS count FROM article_index
+            WHERE wxid = ? AND published_ts >= ? AND published_ts < ? AND body_status <> 'ok'
+            """,
+            (wxid, start_ts, end_ts),
+        ).fetchone()
+        return int(row["count"] if row else 0)
+
+    def save_body(self, wxid: str, key: str, markdown: str) -> None:
+        self.connection.execute(
+            """
+            UPDATE article_index SET markdown = ?, body_status = 'ok', updated_at = ?
+            WHERE wxid = ? AND article_key = ?
+            """,
+            (markdown, self.now_text(), wxid, key),
+        )
+        self.connection.commit()
 
 
 class CimidataClient:
@@ -413,7 +779,9 @@ def operation_for_args(args: argparse.Namespace) -> tuple[Operation, dict[str, A
         if args.page:
             body["page"] = args.page
         return OPERATIONS[command], body
-    if command in {"article-info", "article-body", "article-cover"}:
+    if command == "article-body":
+        return OPERATIONS["article-full"], {"url": args.url}
+    if command in {"article-info", "article-cover"}:
         return OPERATIONS["article-info"], {"url": args.url}
     if command in {"wechat-hot", "wechat-100k-hot"}:
         body = {
@@ -447,7 +815,7 @@ def run_single(args: argparse.Namespace) -> int:
     }
     if args.command == "article-body":
         article = payload.get("data") or {}
-        body_html = article.get("body") if isinstance(article, dict) else ""
+        body_html = article.get("html") if isinstance(article, dict) else ""
         result["data"] = {"html": body_html or "", "markdown": html_to_markdown(str(body_html or ""))}
     elif args.command == "article-cover":
         article = (payload.get("data") or {}).get("article") if isinstance(payload.get("data"), dict) else {}
@@ -719,6 +1087,417 @@ def run_collect(args: argparse.Namespace) -> int:
     return 0
 
 
+def range_state_path(args: argparse.Namespace) -> Path:
+    configured = str(getattr(args, "state_file", "") or "").strip()
+    if configured:
+        return Path(configured).expanduser()
+    data_home = os.getenv("XDG_DATA_HOME", "").strip()
+    base = Path(data_home).expanduser() if data_home else Path.home() / ".local" / "share"
+    return base / "cimidata-wechat-article-collector" / "range-index.sqlite3"
+
+
+def range_plan(
+    index: RangeIndex,
+    args: argparse.Namespace,
+    start_ts: int,
+    end_ts: int,
+) -> tuple[dict[str, Any], str]:
+    wxid = str(args.wxid or "")
+    if not wxid and args.nickname:
+        wxid = index.cached_wxid(args.nickname)
+    resolution_calls = 0 if wxid else 1
+    covered = bool(wxid and index.covers(wxid, start_ts, end_ts))
+    history_pages = 0 if covered else args.max_pages
+    if args.metadata_only or not covered:
+        article_bodies = 0
+    else:
+        article_bodies = min(index.missing_body_count(wxid, start_ts, end_ts), args.max_articles)
+    estimated = round(
+        resolution_calls * OPERATIONS["account-info"].price_yuan
+        + history_pages * OPERATIONS["account-history"].price_yuan
+        + article_bodies * OPERATIONS["article-full"].price_yuan,
+        2,
+    )
+    return (
+        {
+            "account_resolution": resolution_calls,
+            "account_resolution_operation": "account-info" if resolution_calls else "cached",
+            "history_pages": history_pages,
+            "article_bodies": article_bodies,
+            "range_already_indexed": covered,
+            "estimated_max_cost_yuan": estimated,
+        },
+        wxid,
+    )
+
+
+def require_range_plan(args: argparse.Namespace, plan: dict[str, Any]) -> bool:
+    estimated = float(plan["estimated_max_cost_yuan"])
+    if args.dry_run:
+        emit_json(
+            {
+                "status": "dry_run",
+                "estimated_max_cost_yuan": estimated,
+                "max_cost_yuan": args.max_cost,
+                "breakdown": {
+                    "account_resolution": plan["account_resolution"],
+                    "account_resolution_operation": plan["account_resolution_operation"],
+                    "history_pages": plan["history_pages"],
+                    "article_bodies": plan["article_bodies"],
+                },
+                "range_already_indexed": plan["range_already_indexed"],
+            }
+        )
+        return False
+    if estimated > args.max_cost + 1e-9:
+        raise CimidataError(f"本轮最高费用 ¥{estimated:.2f} 超过 --max-cost ¥{args.max_cost:.2f}")
+    if estimated > 0 and not args.confirm_paid:
+        raise CimidataError("这是计费请求。先运行 --dry-run 并获得确认，再加入 --confirm-paid")
+    return True
+
+
+def resolve_range_account(
+    index: RangeIndex,
+    client: CimidataClient,
+    args: argparse.Namespace,
+    cached_wxid: str,
+) -> tuple[str, str]:
+    if cached_wxid:
+        index.save_account(cached_wxid, args.nickname)
+        return cached_wxid, args.nickname or str((index.account(cached_wxid) or {}).get("nickname") or "")
+    detailed = client.call(OPERATIONS["account-info"], {"nickname": args.nickname})
+    data = detailed.get("data") or {}
+    data = data if isinstance(data, dict) else {}
+    wxid = str(data.get("wxid") or "")
+    nickname = str(data.get("nickname") or args.nickname)
+    if not wxid or nickname != args.nickname:
+        raise CimidataError("无法通过准确名称确定公众号，请先从候选账号中确认目标")
+    index.save_account(wxid, nickname)
+    return wxid, nickname
+
+
+def history_page_data(payload: dict[str, Any]) -> tuple[list[dict[str, Any]], str | None]:
+    data = payload.get("data") or {}
+    if not isinstance(data, dict):
+        raise CimidataError("历史列表返回的数据结构无效")
+    items = data.get("items")
+    if not isinstance(items, list):
+        items = pick_items(payload)
+    normalized = [item for item in items if isinstance(item, dict)]
+    last_id = data.get("last_id")
+    return normalized, str(last_id) if last_id not in (None, "") else None
+
+
+def scan_range_metadata(
+    index: RangeIndex,
+    client: CimidataClient,
+    args: argparse.Namespace,
+    wxid: str,
+    nickname: str,
+    start_ts: int,
+    end_ts: int,
+) -> tuple[bool, str, int]:
+    pages_used = 0
+    state = index.account(wxid)
+    now_ts = int(dt.datetime.now(tz=SHANGHAI_TZ).timestamp())
+    if state and state.get("blocked_reason"):
+        return False, str(state["blocked_reason"]), 0
+
+    if state and state["coverage_end_ts"] is not None and end_ts > int(state["coverage_end_ts"]):
+        previous_end = int(state["coverage_end_ts"])
+        started_ts = int(state["head_started_ts"] or now_ts)
+        cursor = str(state["head_resume_cursor"] or "")
+        while pages_used < args.max_pages:
+            request_body: dict[str, Any] = {"wxid": wxid}
+            if cursor:
+                request_body["last_id"] = cursor
+            payload = client.call(OPERATIONS["account-history"], request_body)
+            pages_used += 1
+            items, next_cursor = history_page_data(payload)
+            fingerprint = page_fingerprint(items)
+            if index.has_page(wxid, fingerprint):
+                index.complete_head_sync(wxid, started_ts)
+                break
+            minimum, _ = index.save_head_page(
+                wxid,
+                cursor,
+                next_cursor,
+                items,
+                fingerprint,
+                started_ts,
+            )
+            if next_cursor == cursor:
+                index.block(wxid, "repeated_page")
+                return False, "repeated_page", pages_used
+            if next_cursor is None or (minimum is not None and minimum <= previous_end):
+                index.complete_head_sync(wxid, started_ts)
+                break
+            cursor = next_cursor
+        else:
+            return False, "budget_exhausted", pages_used
+
+    if index.covers(wxid, start_ts, end_ts):
+        return True, "", pages_used
+
+    state = index.account(wxid) or {}
+    cursor = str(state.get("tail_cursor") or "")
+    coverage_end = int(state.get("coverage_end_ts") or now_ts)
+    previous_minimum = state.get("coverage_start_ts")
+    order_valid = bool(state.get("order_valid", 1))
+    seen_cursors: set[str] = set()
+
+    while pages_used < args.max_pages:
+        if cursor in seen_cursors:
+            index.block(wxid, "repeated_page")
+            return False, "repeated_page", pages_used
+        request_body = {"wxid": wxid}
+        if cursor:
+            request_body["last_id"] = cursor
+        payload = client.call(OPERATIONS["account-history"], request_body)
+        pages_used += 1
+        items, next_cursor = history_page_data(payload)
+        fingerprint = page_fingerprint(items)
+        if index.has_page(wxid, fingerprint):
+            index.block(wxid, "repeated_page")
+            return False, "repeated_page", pages_used
+        if not items and next_cursor is not None:
+            index.save_observed_page(wxid, cursor, next_cursor, items, fingerprint)
+            index.block(wxid, "invalid_page")
+            return False, "invalid_page", pages_used
+        timestamps = [
+            parse_publish_timestamp(item.get("published_at") or item.get("post_time"))
+            for item in items
+            if item.get("published_at") or item.get("post_time")
+        ]
+        if timestamps != sorted(timestamps, reverse=True):
+            order_valid = False
+        if timestamps and previous_minimum is not None and max(timestamps) > int(previous_minimum):
+            order_valid = False
+        if next_cursor == cursor:
+            index.save_observed_page(wxid, cursor, next_cursor, items, fingerprint)
+            index.block(wxid, "repeated_page")
+            return False, "repeated_page", pages_used
+        index.save_tail_page(
+            wxid,
+            nickname,
+            cursor,
+            next_cursor,
+            items,
+            fingerprint,
+            coverage_end,
+            order_valid,
+        )
+        seen_cursors.add(cursor)
+        if timestamps:
+            previous_minimum = min(timestamps)
+        if index.covers(wxid, start_ts, end_ts):
+            return True, "", pages_used
+        if next_cursor is None:
+            return True, "", pages_used
+        cursor = next_cursor
+
+    return False, "budget_exhausted", pages_used
+
+
+def indexed_article_for_output(row: dict[str, Any], nickname: str) -> dict[str, Any]:
+    return {
+        "article_url": row["article_url"],
+        "title": row["title"],
+        "publish_time": row["publish_time"],
+        "account": nickname,
+        "author": "",
+        "digest": row["digest"],
+        "cover": row["cover"],
+        "markdown": row["markdown"],
+        "read_count": 0,
+        "like_count": 0,
+        "watching_count": 0,
+        "comment_count": 0,
+        "share_count": 0,
+        "comments": [],
+    }
+
+
+def run_collect_range(args: argparse.Namespace) -> int:
+    if not any((args.wxid, args.nickname)):
+        raise CimidataError("按日期采集必须提供公众号名称")
+    if args.max_pages < 1 or args.max_articles < 0:
+        raise CimidataError("本轮页数上限至少为 1，文章数上限不能为负数")
+    start_ts, end_ts = parse_date_window(args.start_date, args.end_date)
+    now_ts = int(dt.datetime.now(tz=SHANGHAI_TZ).timestamp())
+    if start_ts > now_ts:
+        raise CimidataError("开始日期不能晚于今天")
+    required_end_ts = min(end_ts, now_ts)
+    state_path = range_state_path(args)
+    memory_only = args.dry_run and not state_path.exists()
+    with RangeIndex(None if memory_only else state_path) as index:
+        plan, cached_wxid = range_plan(index, args, start_ts, required_end_ts)
+        if not require_range_plan(args, plan):
+            return 0
+        initially_covered = bool(plan["range_already_indexed"])
+
+        guard = CostGuard(args.max_cost, args.confirm_paid, False)
+        client: CimidataClient | None = None
+
+        def api_client() -> CimidataClient:
+            nonlocal client
+            if client is None:
+                app_id, app_secret = load_credentials(args)
+                client = CimidataClient(app_id, app_secret, args.timeout, guard)
+            return client
+
+        try:
+            wxid, nickname = resolve_range_account(index, api_client(), args, cached_wxid) if not cached_wxid else (
+                cached_wxid,
+                args.nickname or str((index.account(cached_wxid) or {}).get("nickname") or ""),
+            )
+        except CimidataError as exc:
+            emit_json(
+                {
+                    "status": "failed",
+                    "reason": "account_resolution_failed",
+                    "error": str(exc),
+                    "estimated_cost_yuan": guard.spent,
+                    "calls": guard.calls,
+                }
+            )
+            return 2
+        index.save_account(wxid, nickname)
+
+        complete = index.covers(wxid, start_ts, required_end_ts)
+        reason = ""
+        pages_used = 0
+        blocked_reason = str((index.account(wxid) or {}).get("blocked_reason") or "")
+        if not complete and blocked_reason:
+            state = index.account(wxid) or {}
+            emit_json(
+                {
+                    "status": "partial",
+                    "reason": blocked_reason,
+                    "oldest_reached": timestamp_text(state.get("coverage_start_ts")),
+                    "pages_used": 0,
+                    "estimated_cost_yuan": guard.spent,
+                    "max_cost_yuan": args.max_cost,
+                    "resume_saved": True,
+                    "calls": guard.calls,
+                }
+            )
+            return 0
+        if not complete:
+            try:
+                complete, reason, pages_used = scan_range_metadata(
+                    index,
+                    api_client(),
+                    args,
+                    wxid,
+                    nickname,
+                    start_ts,
+                    required_end_ts,
+                )
+            except CimidataError as exc:
+                state = index.account(wxid) or {}
+                emit_json(
+                    {
+                        "status": "partial",
+                        "reason": "history_failed",
+                        "error": str(exc),
+                        "oldest_reached": timestamp_text(state.get("coverage_start_ts")),
+                        "pages_used": pages_used,
+                        "estimated_cost_yuan": guard.spent,
+                        "max_cost_yuan": args.max_cost,
+                        "resume_saved": True,
+                        "calls": guard.calls,
+                    }
+                )
+                return 2
+        if not complete:
+            state = index.account(wxid) or {}
+            emit_json(
+                {
+                    "status": "partial",
+                    "reason": reason,
+                    "oldest_reached": timestamp_text(state.get("coverage_start_ts")),
+                    "pages_used": pages_used,
+                    "estimated_cost_yuan": guard.spent,
+                    "max_cost_yuan": args.max_cost,
+                    "resume_saved": True,
+                    "calls": guard.calls,
+                }
+            )
+            return 0
+
+        candidates = index.range_articles(wxid, start_ts, end_ts)
+        if args.metadata_only or not initially_covered:
+            missing_count = sum(item["body_status"] != "ok" for item in candidates)
+            emit_json(
+                {
+                    "status": "metadata_ready",
+                    "article_count": len(candidates),
+                    "missing_body_count": missing_count,
+                    "estimated_body_cost_yuan": round(
+                        missing_count * OPERATIONS["article-full"].price_yuan,
+                        2,
+                    ),
+                    "estimated_cost_yuan": guard.spent,
+                    "max_cost_yuan": args.max_cost,
+                    "calls": guard.calls,
+                }
+            )
+            return 0
+
+        missing = [item for item in candidates if item["body_status"] != "ok"]
+        body_error = ""
+        for item in missing[: args.max_articles]:
+            try:
+                details = api_client().call(OPERATIONS["article-full"], {"url": item["article_url"]})
+                data = details.get("data") or {}
+                full_html = data.get("html") if isinstance(data, dict) else ""
+                if not isinstance(full_html, str) or not full_html.strip():
+                    raise CimidataError(f"文章正文为空：{item['title']}")
+                index.save_body(wxid, item["article_key"], html_to_markdown(full_html))
+            except CimidataError as exc:
+                body_error = str(exc)
+                break
+
+        remaining = index.missing_body_count(wxid, start_ts, end_ts)
+        ready = [
+            indexed_article_for_output(item, nickname or wxid)
+            for item in index.range_articles(wxid, start_ts, end_ts)
+            if item["body_status"] == "ok"
+        ]
+        status = "success" if remaining == 0 else "partial"
+        reason = "" if remaining == 0 else ("body_failed" if body_error else "body_budget_exhausted")
+        manifest = {
+            "status": status,
+            "reason": reason,
+            "error": body_error,
+            "generated_at": dt.datetime.now().astimezone().isoformat(timespec="seconds"),
+            "start_date": args.start_date,
+            "end_date": args.end_date,
+            "article_count": len(ready),
+            "remaining_body_count": remaining,
+            "estimated_cost_yuan": guard.spent,
+            "max_cost_yuan": args.max_cost,
+            "calls": guard.calls,
+        }
+        if ready:
+            write_collect_output(Path(args.output_dir).expanduser(), ready, manifest)
+        emit_json(
+            {
+                "status": status,
+                "reason": reason,
+                "error": body_error,
+                "article_count": len(ready),
+                "remaining_body_count": remaining,
+                "estimated_cost_yuan": guard.spent,
+                "max_cost_yuan": args.max_cost,
+                "calls": guard.calls,
+                "output_dir": str(Path(args.output_dir).expanduser()),
+            }
+        )
+        return 0
+
+
 def run_provider_call(args: argparse.Namespace) -> int:
     try:
         body = json.loads(args.body_json)
@@ -816,6 +1595,16 @@ def build_parser() -> argparse.ArgumentParser:
     item.add_argument("--comment-limit", type=int, default=COMMENT_LIMIT)
     item.add_argument("--download-images", action="store_true")
     item.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
+    item = command("collect-range", "按日期范围归档公众号文章并保存查询进度")
+    item.add_argument("--wxid", default="", help=argparse.SUPPRESS)
+    item.add_argument("--nickname", default="")
+    item.add_argument("--start-date", required=True, help="开始日期，格式 YYYY-MM-DD")
+    item.add_argument("--end-date", required=True, help="结束日期，格式 YYYY-MM-DD，包含当天")
+    item.add_argument("--max-pages", type=int, default=100, help="本轮最多购买的历史列表页数")
+    item.add_argument("--max-articles", type=int, default=500, help="本轮最多购买正文的文章数")
+    item.add_argument("--metadata-only", action="store_true", help="只建立日期索引，不购买正文")
+    item.add_argument("--state-file", default="", help="可选：覆盖自动管理的本地断点文件位置")
+    item.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
     return parser
 
 
@@ -829,6 +1618,8 @@ def main() -> int:
             return run_setup(args)
         if args.command == "collect":
             return run_collect(args)
+        if args.command == "collect-range":
+            return run_collect_range(args)
         if args.command == "provider-call":
             return run_provider_call(args)
         return run_single(args)

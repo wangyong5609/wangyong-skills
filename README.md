@@ -19,7 +19,7 @@ https://github.com/wangyong5609/wangyong-skills
 
 | Skill | 能做什么 | 状态 |
 | --- | --- | --- |
-| `cimidata-wechat-article-collector` | 采集公众号历史文章、正文、互动数据、脱敏评论、关键词搜索和爆文榜单 | 推荐安装 |
+| `cimidata-wechat-article-collector` | 按最近文章或日期范围采集公众号正文，支持断点续查、互动数据和脱敏评论 | 推荐安装 |
 | `wechat-article-collector` | 使用极致了/大加啦采集公众号历史文章、正文图片、互动数据和可选评论 | 持续维护 |
 | `wechat-official-account-comic` | 生成可发布的微信公众号漫画长图，支持多种可复用风格 | 持续维护 |
 | `macos-app-icon` | 生成、优化、预览和打包 macOS `.icns` 图标 | 持续维护 |
@@ -43,6 +43,10 @@ https://github.com/wangyong5609/wangyong-skills
 
 ```text
 帮我采集「公众号名称」最近一篇文章，只要正文。
+```
+
+```text
+帮我采集「公众号名称」2021 年发布的全部文章，只要正文。
 ```
 
 ```text
