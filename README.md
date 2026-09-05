@@ -67,11 +67,25 @@ https://github.com/wangyong5609/wangyong-skills
 
 ## 效果预览
 
-| Skill | 示例 |
-| --- | --- |
-| `wechat-article-collector` | [查看采集效果](./docs/examples/wechat-article-collector.png) |
-| `wechat-official-account-comic` | [暖白手绘漫画](./docs/examples/wechat-comic-warm-white-handdrawn.png) / [蓝栏柔彩漫画](./docs/examples/wechat-comic-blue-bar-soft-color.png) / [绿底粗线漫画](./docs/examples/wechat-comic-green-bold-line.png) |
-| `ai-creator-cover` | [查看全部封面示例](./ai-creator-cover/assets/examples/showcase/) |
+### 公众号漫画长图 · `wechat-official-account-comic`
+
+| 暖白手绘 | 蓝栏柔彩 | 绿底粗线 |
+| :---: | :---: | :---: |
+| <img src="./docs/examples/wechat-comic-warm-white-handdrawn.png" width="200"> | <img src="./docs/examples/wechat-comic-blue-bar-soft-color.png" width="200"> | <img src="./docs/examples/wechat-comic-green-bold-line.png" width="200"> |
+
+以上为长图顶部样图，实际生成的是约 1 万像素高的完整长图。
+
+### AI 自媒体视频封面 · `ai-creator-cover`
+
+| | | | | | |
+| :---: | :---: | :---: | :---: | :---: | :---: |
+| <img src="./ai-creator-cover/assets/examples/showcase/selected-cover-01.png" width="130"> | <img src="./ai-creator-cover/assets/examples/showcase/selected-cover-02.png" width="130"> | <img src="./ai-creator-cover/assets/examples/showcase/selected-cover-03.png" width="130"> | <img src="./ai-creator-cover/assets/examples/showcase/selected-cover-04.png" width="130"> | <img src="./ai-creator-cover/assets/examples/showcase/codex-newbie-start.png" width="130"> | <img src="./ai-creator-cover/assets/examples/showcase/chatgpt-prompt-library.png" width="130"> |
+
+[查看全部封面示例](./ai-creator-cover/assets/examples/showcase/)
+
+### 公众号文章采集 · `wechat-article-collector`
+
+<img src="./docs/examples/wechat-article-collector.png" width="520">
 
 ## 项目说明
 
