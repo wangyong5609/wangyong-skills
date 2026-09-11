@@ -1,0 +1,10 @@
+# 凭证，勿提交
+.env
+
+# 生成产物
+runs/
+slides/
+slides-*/
+
+# macOS
+.DS_Store
