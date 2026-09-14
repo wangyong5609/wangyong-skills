@@ -17,8 +17,8 @@
 
 - **结尾标点剥除**——字幕行尾不允许出现 `，。、；：？！—…·`。
 - 单条字幕 ≤24 字，超出在标点处切分、按字数均摊时间。
-- 默认样式 MarginV=130（底部）；**PPT 页底部有文字/红框/表格延伸到底部时**，该页的 beat 要标 `high: true`，字幕用 MarginV=210 抬高。若抽帧发现仍轻微相碰，把 `make_video.py` 里 High 的 MarginV 调到 240–260 重渲染。
-- 字体用 PingFang SC + `fontsdir=/System/Library/Fonts`，ASS 烧录正常；不要换不存在的字体名。
+- 字幕固定在**底部安全区 MarginV=130**（距底约 12%，符合 BBC/Netflix 横版标准）。PPT 满版页（卡片/正文铺到画面 70% 以上，如本案 P16）**不要把字幕往上抬**——抬得越高越压上一块内容，正确做法是底部放实底背景框（BorderStyle=3 黑底）把下方画面罩住，字幕干净可读即可。
+- 字体用思源黑体 `Noto Sans SC`（免费可商用、跨平台一致），62px 粗体白字；`fontsdir` 指向 `~/Library/Fonts`（用户字体目录，NotoSansSC[wght].ttf 在这）。**别用苹方 PingFang SC**——仅限 Apple 生态、商用授权模糊。BackColour `&H3F000000` 在 BorderStyle=3 下渲染为实底黑框，正是满版页要的干净罩底。
 
 ## 合成
 

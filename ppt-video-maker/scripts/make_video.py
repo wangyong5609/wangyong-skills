@@ -157,10 +157,10 @@ ass = ["[Script Info]", "ScriptType: v4.00+", "PlayResX: 1920", "PlayResY: 1080"
        "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, "
        "Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, "
        "Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
-       "Style: Default,PingFang SC,52,&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,"
+       "Style: Default,Noto Sans SC,62,&H00FFFFFF,&H00FFFFFF,&H00000000,&H3F000000,"
        "-1,0,0,0,100,100,0,0,3,2,0,2,80,80,130,1",
-       "Style: High,PingFang SC,52,&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,"
-       "-1,0,0,0,100,100,0,0,3,2,0,2,80,80,210,1", "",
+       "Style: High,Noto Sans SC,62,&H00FFFFFF,&H00FFFFFF,&H00000000,&H3F000000,"
+       "-1,0,0,0,100,100,0,0,3,2,0,2,80,80,130,1", "",
        "[Events]",
        "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text"]
 for c in caps:
@@ -185,7 +185,7 @@ else:
         nxt = f"x{i}" if i < n - 1 else "vx"
         fc.append(f"[{prev}][s{i}]xfade=transition=fade:duration={FADE}:offset={offset:.3f}[{nxt}]")
         prev = nxt
-fc.append(f"[vx]subtitles='{ass_path}':fontsdir=/System/Library/Fonts[vout]")
+fc.append(f"[vx]subtitles='{ass_path}':fontsdir={Path.home() / 'Library/Fonts'}[vout]")
 fc.append(f"[{n}:a]adelay={LEAD_MS}|{LEAD_MS},apad[aout]")
 
 sh(["ffmpeg", "-y", *inputs, "-filter_complex", ";".join(fc),

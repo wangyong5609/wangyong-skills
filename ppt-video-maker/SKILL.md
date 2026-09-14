@@ -69,7 +69,9 @@ python3 scripts/tts_prepare.py storyboard.json --out runs/<run-id>/
 python3 scripts/make_video.py runs/<run-id>/ slides/ 输出.mp4
 ```
 
-字幕规范已内置：结尾标点剥除、≤24 字按标点切分、默认 MarginV=130 / high 页 MarginV=210、PingFang SC、xfade 0.4s、片头 0.6s 片尾 1.6s。
+字幕规范已内置：结尾标点剥除、≤24 字按标点切分、MarginV=130（底部安全区）、Noto Sans SC 62px 粗体白字、实底背景框（BorderStyle=3）、xfade 0.4s、片头 0.6s 片尾 1.6s。
+
+> 字幕样式遵循 BBC/Netflix 标准：横版固定在下方安全区（MarginV≈130，距底约 12%），满版 PPT 页**不要上移字幕**——用实底背景框罩住下方内容即可。字体用思源黑体（Noto Sans SC）Bold，免费可商用、跨平台一致；不要用苹方（仅限 Apple 生态、商用授权模糊）。
 
 ### 5. 验收（必做）
 
